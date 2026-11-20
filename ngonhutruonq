@@ -1,5 +1,5 @@
 local env = (getgenv and getgenv()) or _G
-if env.DarkwenCleanup then pcall(env.DarkwenCleanup) end
+if env.TrustCleanup then pcall(env.TrustCleanup) end
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -27,7 +27,6 @@ local ScreenGui
 local MAP_FOLDER_NAMES = {"Maps", "Map", "Worlds", "World", "Stages", "Areas"}
 local ALL_LABEL = "Tất cả"
 
--- Bảng màu hiện đại hơn
 local C = {
     Bg = Color3.fromRGB(15, 15, 20),
     Panel = Color3.fromRGB(28, 28, 35),
@@ -109,6 +108,9 @@ local function getSearchRoot()
 end
 
 local function GetClosestEnemy()
+    local currentMap = LocalPlayer:GetAttribute("CurrentMap")
+    if currentMap == "Lobby" or not currentMap then return nil end
+
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
@@ -432,7 +434,7 @@ local function createTab(name)
 end
 
 ScreenGui = new("ScreenGui", {
-    Name = "DarkwenMenu", ResetOnSpawn = false, DisplayOrder = 999, IgnoreGuiInset = true,
+    Name = "TrustMenu", ResetOnSpawn = false, DisplayOrder = 999, IgnoreGuiInset = true,
 })
 protectGui(ScreenGui)
 
@@ -448,7 +450,7 @@ local Main = new("Frame", {
     ClipsDescendants = true, Parent = ScreenGui,
 })
 corner(Main, 12)
-addStroke(Main, C.Accent, 1.5) -- Viền tím phát sáng cho Menu
+addStroke(Main, C.Accent, 1.5)
 
 local TitleBar = new("Frame", {
     Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.Panel, BorderSizePixel = 0, Parent = Main,
@@ -457,7 +459,7 @@ corner(TitleBar, 12)
 
 new("TextLabel", {
     Size = UDim2.new(1, -50, 1, 0), Position = UDim2.fromOffset(14, 0), BackgroundTransparency = 1,
-    Text = "DARKWEN | HUB", TextColor3 = C.Accent, Font = Enum.Font.GothamBold,
+    Text = "TRUST | HUB", TextColor3 = C.Accent, Font = Enum.Font.GothamBold,
     TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, Parent = TitleBar,
 })
 local CloseBtn = new("TextButton", {
@@ -480,8 +482,8 @@ track(CloseBtn.MouseButton1Click:Connect(function() setMenu(false) end))
 makeDraggable(TitleBar, Main, nil)
 
 local FloatBtn = new("TextButton", {
-    Name = "DarkwenToggle", Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0, 12, 0.5, -23),
-    BackgroundColor3 = C.Accent, Text = "D", TextColor3 = C.Text, Font = Enum.Font.GothamBold,
+    Name = "TrustToggle", Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0, 12, 0.5, -23),
+    BackgroundColor3 = C.Accent, Text = "T", TextColor3 = C.Text, Font = Enum.Font.GothamBold,
     TextSize = 18, BorderSizePixel = 0, AutoButtonColor = false, Parent = ScreenGui,
 })
 corner(FloatBtn, 23)
@@ -509,11 +511,11 @@ createDropdown(mainPage, "Chọn Map", refreshMaps, nil)
 createStepper(mainPage, "Độ cao bay", State.HeightOffset, 0, 20, 0.5, function(v) State.HeightOffset = v end)
 createStepper(mainPage, "Tốc độ đánh (Giây)", State.SkillDelay, 0.05, 1, 0.01, function(v) State.SkillDelay = v end)
 
-env.DarkwenCleanup = function()
+env.TrustCleanup = function()
     stopFarm()
     for _, conn in ipairs(Connections) do pcall(function() conn:Disconnect() end) end
     table.clear(Connections)
     table.clear(Pages)
     if ScreenGui then pcall(function() ScreenGui:Destroy() end) end
-    env.DarkwenCleanup = nil
+    env.TrustCleanup = nil
 end
