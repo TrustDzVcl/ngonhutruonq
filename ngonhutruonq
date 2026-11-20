@@ -1,307 +1,112 @@
-local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local CoreGui = game:GetService("CoreGui")
-local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+-- Đổi tên GUI thành chuỗi ngẫu nhiên để lách Anti-Cheat
+local randomName = "Gui_" .. tostring(math.random(10000, 99999))
+local player = game.Players.LocalPlayer
+local pg = player:WaitForChild("PlayerGui")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+-- Xóa bản cũ nếu có
+if pg:FindFirstChild("Gui_Farm") then pg.Gui_Farm:Destroy() end
 
-local Features = {
-    AutoFarm = false,
-    HeightOffset = 7.5,
-    SkillDelay = 0.15,
-    Fly = false,
-    FlySpeed = 50,
-    MenuOpen = true,
-}
+local gui = Instance.new("ScreenGui")
+gui.Name = "Gui_Farm"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999999
+gui.Parent = pg -- Gán thẳng vào PlayerGui, không dùng CoreGui
 
-local Connections = {}
-local Pages = {}
-local ScreenGui
-local Running = {}
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 150)
+frame.Position = UDim2.new(0.5, -125, 0.5, -75)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+frame.BorderSizePixel = 0
+frame.Parent = gui
 
-local C = {
-    Bg = Color3.fromRGB(15, 15, 20),
-    Panel = Color3.fromRGB(28, 28, 35),
-    Accent = Color3.fromRGB(130, 90, 255),
-    Text = Color3.fromRGB(240, 240, 245),
-    Sub = Color3.fromRGB(150, 150, 165),
-    Off = Color3.fromRGB(45, 45, 55),
-    Red = Color3.fromRGB(220, 60, 80),
-}
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
 
-local function track(conn)
-    table.insert(Connections, conn)
-    return conn
-end
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundTransparency = 1
+title.Text = "DARKWEN (MOBILE FIX)"
+title.TextColor3 = Color3.fromRGB(130, 90, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.Parent = frame
 
-local function new(class, props)
-    local inst = Instance.new(class)
-    local parent = props.Parent
-    props.Parent = nil
-    for k, v in pairs(props) do
-        pcall(function() inst[k] = v end)
-    end
-    inst.Parent = parent
-    return inst
-end
+local btn = Instance.new("TextButton")
+btn.Size = UDim2.new(0.9, 0, 0, 40)
+btn.Position = UDim2.new(0.05, 0, 0.3, 0)
+btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+btn.Text = "Bật Auto Farm"
+btn.TextColor3 = Color3.new(1,1,1)
+btn.Font = Enum.Font.GothamBold
+btn.TextSize = 14
+btn.Parent = frame
 
-local function corner(obj, radius)
-    return new("UICorner", {CornerRadius = UDim.new(0, radius), Parent = obj})
-end
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 6)
+btnCorner.Parent = btn
 
-local function addStroke(obj, color, thickness)
-    return new("UIStroke", {Color = color or C.Accent, Thickness = thickness or 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = obj})
-end
+local isFarming = false
+local runService = game:GetService("RunService")
+local players = game:GetService("Players")
 
-local function GetClosestEnemy()
-    -- Chặn Lobby
-    local currentMap = LocalPlayer:GetAttribute("CurrentMap")
-    if currentMap == "Lobby" or not currentMap then return nil end
+local farmConnection = nil
 
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-    
-    local closestEnemy = nil
-    local shortestDistance = math.huge
-    local rootPos = root.Position
+btn.MouseButton1Click:Connect(function()
+    isFarming = not isFarming
+    if isFarming then
+        btn.Text = "TẮT Auto Farm"
+        btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        
+        if not farmConnection then
+            farmConnection = runService.Heartbeat:Connect(function()
+                if not isFarming then return end
+                
+                -- Kiểm tra Lobby
+                local currentMap = player:GetAttribute("CurrentMap")
+                if currentMap == "Lobby" or not currentMap then return end
 
-    -- Chỉ quét workspace để tránh lag
-    for _, obj in ipairs(workspace:GetChildren()) do
-        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
-            local hum = obj:FindFirstChildOfClass("Humanoid")
-            local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            if hum and hum.Health > 0 and enemyRoot then
-                local d = (rootPos - enemyRoot.Position).Magnitude
-                if d < shortestDistance and d < 400 then
-                    shortestDistance = d
-                    closestEnemy = enemyRoot
-                end
-            end
-        end
-    end
-    return closestEnemy
-end
-
-local function startFarm()
-    if Running.farm then return end
-    Running.farm = true
-    
-    task.spawn(function()
-        while Features.AutoFarm and Running.farm do
-            local target = GetClosestEnemy()
-            if target then
-                local char = LocalPlayer.Character
+                local char = player.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp and not Features.Fly then
-                    hrp.Velocity = Vector3.new(0, 0, 0)
-                    hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, Features.HeightOffset, 0), target.Position)
-                end
                 
-                -- Dùng phím ảo an toàn cho mobile
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                    task.wait(0.02)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                if hrp then
+                    local closest = nil
+                    local dist = math.huge
                     
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
-                    task.wait(0.02)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
-                end)
-            end
-            task.wait(Features.SkillDelay)
-        end
-        Running.farm = false
-    end)
-end
-
-local FlyState = { Conn = nil, BV = nil, BG = nil }
-local function updateFly()
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if Features.Fly and hrp then
-        if not FlyState.BV then
-            FlyState.BV = Instance.new("BodyVelocity", hrp)
-            FlyState.BV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            FlyState.BV.Velocity = Vector3.zero
-            FlyState.BG = Instance.new("BodyGyro", hrp)
-            FlyState.BG.P = 9e4
-            FlyState.BG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-            FlyState.BG.CFrame = hrp.CFrame
-        end
-        if not FlyState.Conn then
-            FlyState.Conn = RunService.RenderStepped:Connect(function()
-                if not Features.Fly or not hrp or not FlyState.BV then return end
-                local camera = workspace.CurrentCamera
-                local moveDir = Vector3.zero
-                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
-                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
-                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
-                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
-                if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
-                
-                if moveDir.Magnitude > 0 then
-                    FlyState.BV.Velocity = moveDir.Unit * Features.FlySpeed
-                    FlyState.BG.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + moveDir.Unit)
-                else
-                    FlyState.BV.Velocity = Vector3.zero
-                    FlyState.BG.CFrame = camera.CFrame
+                    -- Tìm quái xung quanh
+                    for _, v in pairs(workspace:GetChildren()) do
+                        if v:IsA("Model") and v ~= char then
+                            local hum = v:FindFirstChildOfClass("Humanoid")
+                            local eHrp = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("Torso")
+                            if hum and hum.Health > 0 and eHrp then
+                                local d = (hrp.Position - eHrp.Position).Magnitude
+                                if d < dist and d < 300 then
+                                    dist = d
+                                    closest = eHrp
+                                end
+                            end
+                        end
+                    end
+                    
+                    if closest then
+                        -- Bay lên đầu quái
+                        hrp.Velocity = Vector3.new(0,0,0)
+                        hrp.CFrame = CFrame.new(closest.Position + Vector3.new(0, 7.5, 0), closest.Position)
+                        
+                        -- Bấm phím 1 và 2 (Dùng pcall để chống crash nếu Executor chặn)
+                        pcall(function()
+                            local vim = game:GetService("VirtualInputManager")
+                            vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                            vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                            vim:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
+                            vim:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
+                        end)
+                    end
                 end
             end)
         end
     else
-        if FlyState.Conn then FlyState.Conn:Disconnect() FlyState.Conn = nil end
-        if FlyState.BV then FlyState.BV:Destroy() FlyState.BV = nil end
-        if FlyState.BG then FlyState.BG:Destroy() FlyState.BG = nil end
+        btn.Text = "Bật Auto Farm"
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     end
-end
-
--- ================= UI =================
-ScreenGui = new("ScreenGui", {Name = "DarkwenMobile", ResetOnSpawn = false, DisplayOrder = 999})
-local protectOk = pcall(function() ScreenGui.Parent = CoreGui end)
-if not protectOk then ScreenGui.Parent = PlayerGui end
-
-local W, H = 300, 380
-local Main = new("Frame", {
-    Name = "Main", Size = UDim2.fromOffset(W, H), Position = UDim2.fromScale(0.5, 0.5),
-    AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = C.Bg, BorderSizePixel = 0, Parent = ScreenGui
-})
-corner(Main, 12)
-addStroke(Main, C.Accent, 1.5)
-
-local TitleBar = new("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.Panel, BorderSizePixel = 0, Parent = Main})
-corner(TitleBar, 12)
-new("TextLabel", {Size = UDim2.new(1, -50, 1, 0), Position = UDim2.fromOffset(14, 0), BackgroundTransparency = 1, Text = "DARKWEN | MOBILE", TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, Parent = TitleBar})
-local CloseBtn = new("TextButton", {Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, -38, 0.5, -15), BackgroundColor3 = C.Red, Text = "X", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 12, BorderSizePixel = 0, Parent = TitleBar})
-corner(CloseBtn, 6)
-
-local function setMenu(open) Features.MenuOpen = open Main.Visible = open end
-track(CloseBtn.MouseButton1Click:Connect(function() setMenu(false) end))
-
--- Kéo thả Menu
-local dragging, dragStart, startPos = false, nil, nil
-track(TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = Main.Position
-    end
-end))
-track(UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end))
-track(UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end))
-
-local FloatBtn = new("TextButton", {Name = "DarkwenToggle", Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0, 12, 0.5, -23), BackgroundColor3 = C.Accent, Text = "D", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 18, BorderSizePixel = 0, AutoButtonColor = false, Parent = ScreenGui})
-corner(FloatBtn, 23)
-addStroke(FloatBtn, Color3.fromRGB(255, 255, 255), 1)
-track(FloatBtn.MouseButton1Click:Connect(function() setMenu(not Features.MenuOpen) end))
-setMenu(true)
-
--- Hàm tạo UI
-local function createSection(text)
-    return new("TextLabel", {Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, Text = string.upper(text), TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Parent = Main})
-end
-
-local function createToggle(text, default, callback)
-    local row = new("Frame", {Size = UDim2.new(1, -20, 0, 38), Position = UDim2.new(0, 10, 0, 0), BackgroundColor3 = C.Panel, BorderSizePixel = 0, Parent = Main})
-    corner(row, 8)
-    new("TextLabel", {Size = UDim2.new(1, -70, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = text, TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = row})
-    local switchBg = new("Frame", {Size = UDim2.fromOffset(44, 22), Position = UDim2.new(1, -56, 0.5, -11), BackgroundColor3 = default and C.Accent or C.Off, BorderSizePixel = 0, Parent = row})
-    corner(switchBg, 11)
-    local knob = new("Frame", {Size = UDim2.fromOffset(18, 18), Position = default and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2), BackgroundColor3 = Color3.new(1, 1, 1), Parent = switchBg})
-    corner(knob, 9)
-    local clickBtn = new("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Parent = row})
-    local state = default
-    track(clickBtn.MouseButton1Click:Connect(function()
-        state = not state
-        TweenService:Create(switchBg, TweenInfo.new(0.2), {BackgroundColor3 = state and C.Accent or C.Off}):Play()
-        TweenService:Create(knob, TweenInfo.new(0.2), {Position = state and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)}):Play()
-        if callback then callback(state) end
-    end))
-end
-
--- Cấu trúc Layout đơn giản (Không dùng ListLayout để tránh lỗi)
-local yPos = 50
-
-createSection("Auto Farm (Không Lobby")
--- Căn chỉnh lại vị trí bằng tay
-local function place(el, h)
-    el.Position = UDim2.new(0, 10, 0, yPos)
-    el.Size = UDim2.new(1, -20, 0, h)
-    yPos = yPos + h + 8
-end
-
-local sec1 = new("TextLabel", {Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 10, 0, yPos), BackgroundTransparency = 1, Text = "AUTO FARM", TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Parent = Main})
-yPos = yPos + 26
-
--- Toggle Auto Farm
-local row1 = new("Frame", {Size = UDim2.new(1, -20, 0, 38), BackgroundColor3 = C.Panel, BorderSizePixel = 0, Parent = Main})
-place(row1, 38)
-corner(row1, 8)
-new("TextLabel", {Size = UDim2.new(1, -70, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "Bật Auto Farm", TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = row1})
-local sw1 = new("Frame", {Size = UDim2.fromOffset(44, 22), Position = UDim2.new(1, -56, 0.5, -11), BackgroundColor3 = C.Off, BorderSizePixel = 0, Parent = row1})
-corner(sw1, 11)
-local kn1 = new("Frame", {Size = UDim2.fromOffset(18, 18), Position = UDim2.fromOffset(2, 2), BackgroundColor3 = Color3.new(1, 1, 1), Parent = sw1})
-corner(kn1, 9)
-local clk1 = new("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Parent = row1})
-track(clk1.MouseButton1Click:Connect(function()
-    Features.AutoFarm = not Features.AutoFarm
-    TweenService:Create(sw1, TweenInfo.new(0.2), {BackgroundColor3 = Features.AutoFarm and C.Accent or C.Off}):Play()
-    TweenService:Create(kn1, TweenInfo.new(0.2), {Position = Features.AutoFarm and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)}):Play()
-    if Features.AutoFarm then startFarm() else Running.farm = false end
-end))
-
--- Toggle Fly
-local row2 = new("Frame", {Size = UDim2.new(1, -20, 0, 38), BackgroundColor3 = C.Panel, BorderSizePixel = 0, Parent = Main})
-place(row2, 38)
-corner(row2, 8)
-new("TextLabel", {Size = UDim2.new(1, -70, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = "Bật Fly (Bay)", TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = row2})
-local sw2 = new("Frame", {Size = UDim2.fromOffset(44, 22), Position = UDim2.new(1, -56, 0.5, -11), BackgroundColor3 = C.Off, BorderSizePixel = 0, Parent = row2})
-corner(sw2, 11)
-local kn2 = new("Frame", {Size = UDim2.fromOffset(18, 18), Position = UDim2.fromOffset(2, 2), BackgroundColor3 = Color3.new(1, 1, 1), Parent = sw2})
-corner(kn2, 9)
-local clk2 = new("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Parent = row2})
-track(clk2.MouseButton1Click:Connect(function()
-    Features.Fly = not Features.Fly
-    TweenService:Create(sw2, TweenInfo.new(0.2), {BackgroundColor3 = Features.Fly and C.Accent or C.Off}):Play()
-    TweenService:Create(kn2, TweenInfo.new(0.2), {Position = Features.Fly and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)}):Play()
-    updateFly()
-end))
-
--- Nút Auto Select (Dùng VirtualInput)
-local row3 = new("TextButton", {Size = UDim2.new(1, -20, 0, 38), BackgroundColor3 = C.Panel, Text = "Auto Select (Nút V)", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 13, BorderSizePixel = 0, Parent = Main})
-place(row3, 38)
-corner(row3, 8)
-track(row3.MouseButton1Click:Connect(function()
-    -- Quét và bấm nút Select
-    for _, v in ipairs(PlayerGui:GetDescendants()) do
-        if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible and v.AbsoluteSize.Magnitude > 0 then
-            local txt = ""
-            if v:IsA("TextButton") then txt = v.Text else
-                local lbl = v:FindFirstChildWhichIsA("TextLabel")
-                if lbl then txt = lbl.Text end
-            end
-            if txt:lower():find("select") or txt == "V" then
-                local pos = v.AbsolutePosition + (v.AbsoluteSize / 2)
-                VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
-                task.wait(0.05)
-                VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
-                break
-            end
-        end
-    end
-end))
-
-print("Darkwen Mobile đã tải xong!")
+end)
