@@ -15,7 +15,7 @@ ToggleBtn.Size = UDim2.new(0, 140, 0, 35)
 ToggleBtn.Position = UDim2.new(0.5, -70, 0, 10)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "Fly & Skill: OFF"
+ToggleBtn.Text = "AutoFram: OFF"
 ToggleBtn.Font = Enum.Font.SourceSansBold
 ToggleBtn.TextSize = 15
 
