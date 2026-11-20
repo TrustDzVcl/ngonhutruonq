@@ -8,16 +8,13 @@ local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local RemoteBank = require(ReplicatedStorage:WaitForChild("RemoteBank"))
 
-local SCRIPT_URL = "" 
 local CONFIG_FILE = "DarkwenConfig.json"
-
 local Features = {
     AutoFarm = false,
     Punch = true,
@@ -39,17 +36,13 @@ local Features = {
 
 local function SaveConfig()
     if writefile then
-        pcall(function()
-            writefile(CONFIG_FILE, HttpService:JSONEncode(Features))
-        end)
+        pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(Features)) end)
     end
 end
 
 local function LoadConfig()
     if isfile and isfile(CONFIG_FILE) then
-        local success, data = pcall(function()
-            return HttpService:JSONDecode(readfile(CONFIG_FILE))
-        end)
+        local success, data = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
         if success and type(data) == "table" then
             for k, v in pairs(data) do
                 if Features[k] ~= nil then Features[k] = v end
@@ -90,9 +83,7 @@ local function new(class, props)
 end
 
 local function corner(obj, radius) return new("UICorner", {CornerRadius = UDim.new(0, radius), Parent = obj}) end
-local function addStroke(obj, color, thickness)
-    return new("UIStroke", {Color = color or C.Accent, Thickness = thickness or 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = obj})
-end
+local function addStroke(obj, color, thickness) return new("UIStroke", {Color = color or C.Accent, Thickness = thickness or 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = obj}) end
 
 local function protectGui(gui)
     local ok = false
@@ -127,36 +118,6 @@ local function ClickUIByText(textTarget, isExact)
     return false
 end
 
-local function startAutoChallenge()
-    if Running.challenge then return end
-    Running.challenge = true
-
-    task.spawn(function()
-        while Features.AutoChallenge and Running.challenge do
-            ClickUIByText("Challenges")
-            task.wait(1.5)
-            
-            if Features.ChallengeType == "Regular" then
-                ClickUIByText("Regular Challenge")
-            elseif Features.ChallengeType == "Weekly" then
-                ClickUIByText("Weekly Challenge")
-            else
-                ClickUIByText("Daily Challenge")
-            end
-            task.wait(1.5)
-            
-            local clickedPlay = ClickUIByText("Select") or ClickUIByText("V", true)
-            
-            if clickedPlay then
-                task.wait(15)
-            else
-                task.wait(5)
-            end
-        end
-        Running.challenge = false
-    end)
-end
-
 local function getMapFolder()
     for _, name in ipairs(MAP_FOLDER_NAMES) do
         local folder = workspace:FindFirstChild(name)
@@ -179,6 +140,10 @@ local function refreshMaps()
 end
 
 local function GetClosestEnemy()
+    -- CHẶN FARM Ở LOBBY
+    local currentMap = LocalPlayer:GetAttribute("CurrentMap")
+    if currentMap == "Lobby" or not currentMap then return nil end
+
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
@@ -211,35 +176,58 @@ end
 local function startFarm()
     if Running.farm then return end
     Running.farm = true
-    task.spawn(function()
-        RunService.Heartbeat:Connect(function()
-            if not Features.AutoFarm or not Running.farm or Features.Fly then return end
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local target = GetClosestEnemy()
-            if root and target then
-                root.Velocity = Vector3.new(0, 0, 0)
-                root.CFrame = CFrame.new(target.Position + Vector3.new(0, Features.HeightOffset, 0), target.Position)
-            end
-        end)
-    end)
-
+    
     task.spawn(function()
         while Features.AutoFarm and Running.farm do
-            task.wait(Features.SkillDelay)
             local target = GetClosestEnemy()
-            if Features.AutoFarm and target then
+            if target then
+                -- BAY TỚI QUÁI
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp and not Features.Fly then
+                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, Features.HeightOffset, 0), target.Position)
+                end
+                
+                -- ĐÁNH & SPAM SKILL
                 pcall(function()
                     if Features.Punch then RemoteBank.PunchRemote:Fire() end
                     if Features.Skill then RemoteBank.CastPower:Fire({ targetPosition = target.Position }) end
                 end)
             end
+            task.wait(Features.SkillDelay)
         end
         Running.farm = false
     end)
 end
 
 local function stopFarm() Features.AutoFarm = false Running.farm = false end
+
+local function startAutoChallenge()
+    if Running.challenge then return end
+    Running.challenge = true
+
+    task.spawn(function()
+        while Features.AutoChallenge and Running.challenge do
+            ClickUIByText("Challenges")
+            task.wait(1.5)
+            
+            if Features.ChallengeType == "Regular" then ClickUIByText("Regular Challenge")
+            elseif Features.ChallengeType == "Weekly" then ClickUIByText("Weekly Challenge")
+            else ClickUIByText("Daily Challenge") end
+            task.wait(1.5)
+            
+            local clickedPlay = ClickUIByText("Select") or ClickUIByText("V", true)
+            
+            if clickedPlay then
+                task.wait(10)
+            else
+                task.wait(3)
+            end
+        end
+        Running.challenge = false
+    end)
+end
 
 local FlyState = { Conn = nil, BV = nil, BG = nil }
 local function updateFly()
@@ -317,16 +305,6 @@ local function updateESP()
         espRunning = false
     end)
 end
-
-LocalPlayer.OnTeleport:Connect(function(State)
-    if State == Enum.TeleportState.Started and Features.AutoRejoin and SCRIPT_URL ~= "" then
-        if queue_on_teleport then
-            pcall(function() queue_on_teleport("loadstring(game:HttpGet('"..SCRIPT_URL.."'))()") end)
-        elseif syn and syn.queue_on_teleport then
-            pcall(function() syn.queue_on_teleport("loadstring(game:HttpGet('"..SCRIPT_URL.."'))()") end)
-        end
-    end
-end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
@@ -497,7 +475,7 @@ local playerPage = createTab("Player")
 local modesPage = createTab("Modes")
 local visualPage = createTab("Visual")
 
-createSection(mainPage, "Auto Farm")
+createSection(mainPage, "Auto Farm (Ngoài Lobby)")
 createToggle(mainPage, "Bật Auto Farm", Features.AutoFarm, function(v)
     Features.AutoFarm = v SaveConfig()
     if v then startFarm() else stopFarm() end
@@ -530,7 +508,6 @@ createSection(modesPage, "Mở Menu Game")
 createButton(modesPage, "Mở Worlds", function() ClickUIByText("Worlds") end)
 createButton(modesPage, "Mở Missions", function() ClickUIByText("Missions") end)
 createButton(modesPage, "Mở Challenges", function() ClickUIByText("Challenges") end)
-createButton(modesPage, "Mở Gauntlet", function() ClickUIByText("Gauntlet") end)
 
 createSection(modesPage, "Tự động đi Solo")
 createToggle(modesPage, "Auto Join Challenge", Features.AutoChallenge, function(v) Features.AutoChallenge = v SaveConfig() if v then startAutoChallenge() end end)
@@ -553,15 +530,11 @@ end)
 
 env.DarkwenCleanup = function()
     stopFarm()
-    Features.Fly = false
-    updateFly()
-    Features.ESP_Enemies = false
-    Features.ESP_Players = false
-    Features.AutoChallenge = false
-    Running.challenge = false
+    Features.Fly = false updateFly()
+    Features.ESP_Enemies = false Features.ESP_Players = false
+    Features.AutoChallenge = false Running.challenge = false
     for _, conn in ipairs(Connections) do pcall(function() conn:Disconnect() end) end
-    table.clear(Connections)
-    table.clear(Pages)
+    table.clear(Connections) table.clear(Pages)
     if ScreenGui then pcall(function() ScreenGui:Destroy() end) end
     env.DarkwenCleanup = nil
 end
