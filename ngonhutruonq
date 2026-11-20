@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -13,7 +14,9 @@ local State = {
     AutoFarm = false,
     SelectedMap = nil,
     Distance = 4,
-    AttackDelay = 0.15,
+    AttackDelay = 0.05,
+    SpamSkill = true,
+    SkillDelay = 0.1,
     MenuOpen = true,
 }
 
@@ -50,7 +53,7 @@ local function new(class, props)
     local parent = props.Parent
     props.Parent = nil
     for k, v in pairs(props) do
-        inst[k] = v
+        pcall(function() inst[k] = v end)
     end
     inst.Parent = parent
     return inst
@@ -63,21 +66,16 @@ end
 local function protectGui(gui)
     local ok = false
     if gethui then
-        ok = pcall(function()
-            gui.Parent = gethui()
-        end)
+        ok = pcall(function() gui.Parent = gethui() end)
     end
     if not ok or not gui.Parent then
-        ok = pcall(function()
-            gui.Parent = CoreGui
-        end)
+        ok = pcall(function() gui.Parent = CoreGui end)
         if not ok or not gui.Parent then
             gui.Parent = PlayerGui
         end
     end
 end
 
---// Map + enemy logic
 local function getMapFolder()
     for _, name in ipairs(MAP_FOLDER_NAMES) do
         local folder = workspace:FindFirstChild(name)
@@ -105,28 +103,47 @@ local function refreshMaps()
     return list
 end
 
-local function findTarget(hrp)
-    local searchRoot = workspace
-    if State.SelectedMap then
-        local folder = getMapFolder()
-        local mapModel = folder and folder:FindFirstChild(State.SelectedMap)
-        if not mapModel then
-            return nil
-        end
-        searchRoot = mapModel
+local function getSearchRoot()
+    if not State.SelectedMap then
+        return workspace
     end
+    local folder = getMapFolder()
+    return folder and folder:FindFirstChild(State.SelectedMap) or nil
+end
+
+local _targetCache = nil
+local _targetCacheTime = 0
+local TARGET_CACHE_DURATION = 0.2
+
+local function findTarget(hrp)
+    local now = tick()
+    if _targetCache and _targetCache.Parent and (now - _targetCacheTime) < TARGET_CACHE_DURATION then
+        local root = _targetCache:FindFirstChild("HumanoidRootPart")
+        if root then
+            return root
+        end
+    end
+
+    local searchRoot = getSearchRoot()
+    if not searchRoot then return nil end
 
     local localChar = LocalPlayer.Character
     local best, bestDist = nil, math.huge
-    for _, obj in ipairs(searchRoot:GetDescendants()) do
-        if obj:IsA("Humanoid") and obj.Health > 0 then
-            local model = obj.Parent
-            if model and model:IsA("Model")
-                and model ~= localChar
-                and not Players:GetPlayerFromCharacter(model) then
+    local hrpPos = hrp.Position
+
+    local children = searchRoot:GetChildren()
+    for i = 1, #children do
+        local model = children[i]
+        if model:IsA("Model") and model ~= localChar 
+           and not Players:GetPlayerFromCharacter(model) then
+            local hum = model:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
                 local root = model:FindFirstChild("HumanoidRootPart")
                 if root then
-                    local d = (root.Position - hrp.Position).Magnitude
+                    local dx = root.Position.X - hrpPos.X
+                    local dy = root.Position.Y - hrpPos.Y
+                    local dz = root.Position.Z - hrpPos.Z
+                    local d = dx*dx + dy*dy + dz*dz
                     if d < bestDist then
                         best, bestDist = root, d
                     end
@@ -134,53 +151,145 @@ local function findTarget(hrp)
             end
         end
     end
+
+    if not best then
+        local desc = searchRoot:GetDescendants()
+        for i = 1, #desc do
+            local obj = desc[i]
+            if obj:IsA("Humanoid") and obj.Health > 0 then
+                local model = obj.Parent
+                if model and model:IsA("Model")
+                    and model ~= localChar
+                    and not Players:GetPlayerFromCharacter(model) then
+                    local root = model:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        local dx = root.Position.X - hrpPos.X
+                        local dy = root.Position.Y - hrpPos.Y
+                        local dz = root.Position.Z - hrpPos.Z
+                        local d = dx*dx + dy*dy + dz*dz
+                        if d < bestDist then
+                            best, bestDist = root, d
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if best then
+        _targetCache = best.Parent
+        _targetCacheTime = now
+    end
+
     return best
 end
 
+local _equippedTool = nil
 local function ensureTool(char, hum)
     local tool = char:FindFirstChildOfClass("Tool")
     if tool then
+        _equippedTool = tool
         return tool
+    end
+    if _equippedTool and _equippedTool.Parent then
+        return _equippedTool
     end
     local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
     tool = backpack and backpack:FindFirstChildOfClass("Tool")
     if tool then
-        hum:EquipTool(tool)
+        pcall(function() hum:EquipTool(tool) end)
+        _equippedTool = tool
     end
     return tool
 end
 
-local function startFarm()
-    if Running.farm then
+local _lastCFrame = nil
+local function smoothTeleport(hrp, targetPos, dist)
+    local desired = CFrame.lookAt(targetPos + Vector3.new(0, dist, 0), targetPos)
+    if _lastCFrame and (_lastCFrame.Position - desired.Position).Magnitude < 0.1 then
         return
     end
+    _lastCFrame = desired
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.CFrame = desired
+end
+
+local function spamSkills(char)
+    if not State.SpamSkill then return end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then
+        pcall(function() tool:Activate() end)
+    end
+
+    local skills = char:FindFirstChild("Skills")
+    if skills then
+        for _, skill in ipairs(skills:GetChildren()) do
+            if skill:IsA("RemoteEvent") or skill:IsA("RemoteFunction") then
+                pcall(function()
+                    if skill:IsA("RemoteEvent") then
+                        skill:FireServer()
+                    else
+                        skill:InvokeServer()
+                    end
+                end)
+            end
+        end
+    end
+
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("RemoteEvent") then
+            pcall(function() v:FireServer() end)
+        end
+    end
+end
+
+local function startFarm()
+    if Running.farm then return end
     Running.farm = true
+
     task.spawn(function()
+        local skillAccum = 0
         while State.AutoFarm and Running.farm do
+            local dt = RunService.Heartbeat:Wait()
+
             local char = LocalPlayer.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
             if hum and hrp and hum.Health > 0 then
                 local targetRoot = findTarget(hrp)
-                if targetRoot then
+
+                if targetRoot and targetRoot.Parent then
                     local tool = ensureTool(char, hum)
-                    local tPos = targetRoot.Position
-                    hrp.AssemblyLinearVelocity = Vector3.zero
-                    hrp.CFrame = CFrame.lookAt(tPos + Vector3.new(0, State.Distance, 0), tPos)
+                    smoothTeleport(hrp, targetRoot.Position, State.Distance)
+
                     if tool then
-                        pcall(function()
-                            tool:Activate()
-                        end)
+                        pcall(function() tool:Activate() end)
+                    end
+
+                    if State.SpamSkill then
+                        skillAccum += dt
+                        if skillAccum >= State.SkillDelay then
+                            skillAccum = 0
+                            spamSkills(char)
+                        end
                     end
                 end
             end
+
             task.wait(State.AttackDelay)
         end
         Running.farm = false
+        _equippedTool = nil
+        _targetCache = nil
+        _lastCFrame = nil
     end)
 end
 
---// Drag helper (mouse + touch), optional click callback when not moved
 local function makeDraggable(handle, target, onClick)
     local dragging, dragStart, startPos, moved = false, nil, nil, false
     track(handle.InputBegan:Connect(function(input)
@@ -194,9 +303,7 @@ local function makeDraggable(handle, target, onClick)
             endedConn = input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
-                    if endedConn then
-                        endedConn:Disconnect()
-                    end
+                    if endedConn then endedConn:Disconnect() end
                     if not moved and onClick then
                         task.spawn(onClick)
                     end
@@ -208,9 +315,7 @@ local function makeDraggable(handle, target, onClick)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
-            if delta.Magnitude > 6 then
-                moved = true
-            end
+            if delta.Magnitude > 6 then moved = true end
             if moved then
                 target.Position = UDim2.new(
                     startPos.X.Scale, startPos.X.Offset + delta.X,
@@ -221,7 +326,6 @@ local function makeDraggable(handle, target, onClick)
     end))
 end
 
---// UI builders
 local function createRow(parent, height)
     local row = new("Frame", {
         Size = UDim2.new(1, 0, 0, height or 38),
@@ -292,13 +396,9 @@ local function createToggle(parent, text, default, callback)
         TweenService:Create(knob, TweenInfo.new(0.15), {
             Position = v and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)
         }):Play()
-        if callback then
-            task.spawn(callback, v)
-        end
+        if callback then task.spawn(callback, v) end
     end
-    track(clickBtn.MouseButton1Click:Connect(function()
-        set(not state)
-    end))
+    track(clickBtn.MouseButton1Click:Connect(function() set(not state) end))
     return set
 end
 
@@ -316,15 +416,14 @@ local function createButton(parent, text, callback)
     })
     corner(btn, 8)
     track(btn.MouseButton1Click:Connect(function()
-        if callback then
-            task.spawn(callback)
-        end
+        if callback then task.spawn(callback) end
     end))
     return btn
 end
 
-local function createStepper(parent, text, default, min, max, callback)
+local function createStepper(parent, text, default, min, max, step, callback)
     local value = default
+    step = step or 1
     local row = createRow(parent)
     new("TextLabel", {
         Size = UDim2.new(1, -120, 1, 0),
@@ -373,17 +472,11 @@ local function createStepper(parent, text, default, min, max, callback)
     corner(plus, 6)
     local function apply(v)
         value = math.clamp(v, min, max)
-        valueLbl.Text = tostring(value)
-        if callback then
-            task.spawn(callback, value)
-        end
+        valueLbl.Text = string.format("%.2f", value):gsub("%.?0+$", "")
+        if callback then task.spawn(callback, value) end
     end
-    track(minus.MouseButton1Click:Connect(function()
-        apply(value - 1)
-    end))
-    track(plus.MouseButton1Click:Connect(function()
-        apply(value + 1)
-    end))
+    track(minus.MouseButton1Click:Connect(function() apply(value - step) end))
+    track(plus.MouseButton1Click:Connect(function() apply(value + step) end))
 end
 
 local function createDropdown(parent, text, getOptions, onSelect)
@@ -436,9 +529,7 @@ local function createDropdown(parent, text, getOptions, onSelect)
 
     local function rebuild()
         for _, child in ipairs(listFrame:GetChildren()) do
-            if child:IsA("TextButton") then
-                child:Destroy()
-            end
+            if child:IsA("TextButton") then child:Destroy() end
         end
         local options = {ALL_LABEL}
         for _, name in ipairs(getOptions()) do
@@ -461,17 +552,14 @@ local function createDropdown(parent, text, getOptions, onSelect)
                 State.SelectedMap = value
                 current.Text = name
                 listFrame.Visible = false
-                if onSelect then
-                    task.spawn(onSelect, value)
-                end
+                _targetCache = nil
+                if onSelect then task.spawn(onSelect, value) end
             end))
         end
     end
 
     track(headerBtn.MouseButton1Click:Connect(function()
-        if not listFrame.Visible then
-            rebuild()
-        end
+        if not listFrame.Visible then rebuild() end
         listFrame.Visible = not listFrame.Visible
     end))
 end
@@ -517,13 +605,10 @@ local function createTab(name)
     end
     track(btn.MouseButton1Click:Connect(activate))
     table.insert(Pages, {Btn = btn, Page = page})
-    if #Pages == 1 then
-        activate()
-    end
+    if #Pages == 1 then activate() end
     return page
 end
 
---// Build GUI
 ScreenGui = new("ScreenGui", {
     Name = "DarkwenMenu",
     ResetOnSpawn = false,
@@ -536,7 +621,7 @@ local camera = workspace.CurrentCamera or workspace:WaitForChild("CurrentCamera"
 local viewport = camera.ViewportSize
 local isSmall = viewport.X < 800
 local W = isSmall and 290 or 340
-local H = isSmall and 330 or 380
+local H = isSmall and 380 or 430
 
 local Main = new("Frame", {
     Name = "Main",
@@ -599,10 +684,7 @@ local function setMenu(open)
     Main.Visible = open
 end
 
-track(CloseBtn.MouseButton1Click:Connect(function()
-    setMenu(false)
-end))
-
+track(CloseBtn.MouseButton1Click:Connect(function() setMenu(false) end))
 makeDraggable(TitleBar, Main, nil)
 
 local FloatBtn = new("TextButton", {
@@ -619,9 +701,9 @@ local FloatBtn = new("TextButton", {
     Parent = ScreenGui,
 })
 corner(FloatBtn, 23)
-makeDraggable(FloatBtn, FloatBtn, function()
+track(FloatBtn.MouseButton1Click:Connect(function()
     setMenu(not State.MenuOpen)
-end)
+end))
 
 track(UIS.InputBegan:Connect(function(input, gp)
     if not gp and input.KeyCode == Enum.KeyCode.RightShift then
@@ -631,7 +713,6 @@ end))
 
 setMenu(State.MenuOpen)
 
---// Tabs
 local mainPage = createTab("Main")
 
 createSection(mainPage, "Auto Farm")
@@ -639,25 +720,40 @@ createToggle(mainPage, "Bật Auto Farm", false, function(v)
     State.AutoFarm = v
     if v then
         startFarm()
+    else
+        Running.farm = false
     end
 end)
 createDropdown(mainPage, "Chọn Map", refreshMaps, nil)
-createStepper(mainPage, "Khoảng cách trên đầu quái", State.Distance, 1, 15, function(v)
+createStepper(mainPage, "Khoảng cách trên đầu quái", State.Distance, 1, 15, 1, function(v)
     State.Distance = v
 end)
 
---// Cleanup
+createSection(mainPage, "Skill")
+createToggle(mainPage, "Spam Skill", true, function(v)
+    State.SpamSkill = v
+end)
+createStepper(mainPage, "Tốc độ Spam Skill (giây)", State.SkillDelay, 0.05, 2, 0.05, function(v)
+    State.SkillDelay = v
+end)
+createStepper(mainPage, "Tốc độ đánh (giây)", State.AttackDelay, 0.02, 1, 0.01, function(v)
+    State.AttackDelay = v
+end)
+
 env.DarkwenCleanup = function()
     State.AutoFarm = false
+    State.SpamSkill = false
     Running.farm = false
+    _equippedTool = nil
+    _targetCache = nil
+    _lastCFrame = nil
     for _, conn in ipairs(Connections) do
-        pcall(function()
-            conn:Disconnect()
-        end)
+        pcall(function() conn:Disconnect() end)
     end
     table.clear(Connections)
+    table.clear(Pages)
     if ScreenGui then
-        ScreenGui:Destroy()
+        pcall(function() ScreenGui:Destroy() end)
     end
     env.DarkwenCleanup = nil
 end
