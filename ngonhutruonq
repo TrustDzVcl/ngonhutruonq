@@ -1,112 +1,49 @@
--- Đổi tên GUI thành chuỗi ngẫu nhiên để lách Anti-Cheat
-local randomName = "Gui_" .. tostring(math.random(10000, 99999))
 local player = game.Players.LocalPlayer
-local pg = player:WaitForChild("PlayerGui")
+local coreGui = game:GetService("CoreGui")
 
--- Xóa bản cũ nếu có
-if pg:FindFirstChild("Gui_Farm") then pg.Gui_Farm:Destroy() end
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DarkwenTest_Final"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999999
+screenGui.IgnoreGuiInset = true
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "Gui_Farm"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999999
-gui.Parent = pg -- Gán thẳng vào PlayerGui, không dùng CoreGui
+-- Dùng pcall y hệt khung đỏ để chống lỗi
+local success = pcall(function()
+    screenGui.Parent = coreGui
+end)
+
+if not success then
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+end
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 250, 0, 150)
-frame.Position = UDim2.new(0.5, -125, 0.5, -75)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+frame.Size = UDim2.new(0, 280, 0, 200)
+frame.Position = UDim2.new(0.5, -140, 0.5, -100)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 frame.BorderSizePixel = 0
-frame.Parent = gui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = frame
+frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 40)
+title.Position = UDim2.new(0, 0, 0, 10)
 title.BackgroundTransparency = 1
-title.Text = "DARKWEN (MOBILE FIX)"
+title.Text = "MENU ĐÃ LÊN!"
 title.TextColor3 = Color3.fromRGB(130, 90, 255)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 16
+title.TextSize = 18
 title.Parent = frame
 
 local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0.9, 0, 0, 40)
-btn.Position = UDim2.new(0.05, 0, 0.3, 0)
-btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-btn.Text = "Bật Auto Farm"
-btn.TextColor3 = Color3.new(1,1,1)
+btn.Size = UDim2.new(0.8, 0, 0, 40)
+btn.Position = UDim2.new(0.1, 0, 0.4, 0)
+btn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
+btn.Text = "Bấm Thử Vào Đây"
+btn.TextColor3 = Color3.new(1, 1, 1)
 btn.Font = Enum.Font.GothamBold
 btn.TextSize = 14
 btn.Parent = frame
 
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 6)
-btnCorner.Parent = btn
-
-local isFarming = false
-local runService = game:GetService("RunService")
-local players = game:GetService("Players")
-
-local farmConnection = nil
-
 btn.MouseButton1Click:Connect(function()
-    isFarming = not isFarming
-    if isFarming then
-        btn.Text = "TẮT Auto Farm"
-        btn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-        
-        if not farmConnection then
-            farmConnection = runService.Heartbeat:Connect(function()
-                if not isFarming then return end
-                
-                -- Kiểm tra Lobby
-                local currentMap = player:GetAttribute("CurrentMap")
-                if currentMap == "Lobby" or not currentMap then return end
-
-                local char = player.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                
-                if hrp then
-                    local closest = nil
-                    local dist = math.huge
-                    
-                    -- Tìm quái xung quanh
-                    for _, v in pairs(workspace:GetChildren()) do
-                        if v:IsA("Model") and v ~= char then
-                            local hum = v:FindFirstChildOfClass("Humanoid")
-                            local eHrp = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("Torso")
-                            if hum and hum.Health > 0 and eHrp then
-                                local d = (hrp.Position - eHrp.Position).Magnitude
-                                if d < dist and d < 300 then
-                                    dist = d
-                                    closest = eHrp
-                                end
-                            end
-                        end
-                    end
-                    
-                    if closest then
-                        -- Bay lên đầu quái
-                        hrp.Velocity = Vector3.new(0,0,0)
-                        hrp.CFrame = CFrame.new(closest.Position + Vector3.new(0, 7.5, 0), closest.Position)
-                        
-                        -- Bấm phím 1 và 2 (Dùng pcall để chống crash nếu Executor chặn)
-                        pcall(function()
-                            local vim = game:GetService("VirtualInputManager")
-                            vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                            vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                            vim:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
-                            vim:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
-                        end)
-                    end
-                end
-            end)
-        end
-    else
-        btn.Text = "Bật Auto Farm"
-        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    end
+    btn.Text = "CHÚC MỪNG! ĐÃ BẤM ĐƯỢC"
+    btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 end)
