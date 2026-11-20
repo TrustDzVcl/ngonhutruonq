@@ -22,10 +22,10 @@ ToggleBtn.TextSize = 15
 ToggleBtn.MouseButton1Click:Connect(function()
     _G.AutoFarm = not _G.AutoFarm
     if _G.AutoFarm then
-        ToggleBtn.Text = "Fly & Skill: ON"
+        ToggleBtn.Text = "AutoFram: ON"
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
     else
-        ToggleBtn.Text = "Fly & Skill: OFF"
+        ToggleBtn.Text = "AutoFram: OFF"
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     end
 end)
