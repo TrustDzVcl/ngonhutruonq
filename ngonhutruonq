@@ -1,14 +1,15 @@
 local player = game.Players.LocalPlayer
 local coreGui = game:GetService("CoreGui")
 
+-- Đổi tên GUI thành tên vô hại để lách Anti-Cheat
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DarkwenTest_Final"
+screenGui.Name = "TestGUI_Moi"
 screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999999
 screenGui.IgnoreGuiInset = true
 
--- Dùng pcall y hệt khung đỏ để chống lỗi
-local success = pcall(function()
+-- Dùng pcall gán vào CoreGui y hệt khung đỏ
+local success, err = pcall(function()
     screenGui.Parent = coreGui
 end)
 
@@ -16,34 +17,20 @@ if not success then
     screenGui.Parent = player:WaitForChild("PlayerGui")
 end
 
+-- Tạo Frame màu XANH LÁ để dễ nhìn
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 280, 0, 200)
-frame.Position = UDim2.new(0.5, -140, 0.5, -100)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-frame.BorderSizePixel = 0
+frame.Size = UDim2.new(0, 300, 0, 200)
+frame.Position = UDim2.new(0.5, -150, 0.5, -100)
+frame.BackgroundColor3 = Color3.fromRGB(50, 200, 100) -- Xanh lá
+frame.BorderSizePixel = 5
+frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
 frame.Parent = screenGui
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.Position = UDim2.new(0, 0, 0, 10)
-title.BackgroundTransparency = 1
-title.Text = "MENU ĐÃ LÊN!"
-title.TextColor3 = Color3.fromRGB(130, 90, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 18
-title.Parent = frame
-
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0.8, 0, 0, 40)
-btn.Position = UDim2.new(0.1, 0, 0.4, 0)
-btn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
-btn.Text = "Bấm Thử Vào Đây"
-btn.TextColor3 = Color3.new(1, 1, 1)
-btn.Font = Enum.Font.GothamBold
-btn.TextSize = 14
-btn.Parent = frame
-
-btn.MouseButton1Click:Connect(function()
-    btn.Text = "CHÚC MỪNG! ĐÃ BẤM ĐƯỢC"
-    btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-end)
+local text = Instance.new("TextLabel")
+text.Size = UDim2.new(1, 0, 1, 0)
+text.BackgroundTransparency = 1
+text.Text = "ĐÂY LÀ MENU MỚI\nNẾU BẠN THẤY MÀU XANH NÀY\nLÀ CODE ĐÃ CHẠY!"
+text.TextColor3 = Color3.fromRGB(255, 255, 255)
+text.TextScaled = true
+text.Font = Enum.Font.GothamBold
+text.Parent = frame
