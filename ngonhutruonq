@@ -14,17 +14,25 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local State = {
     AutoFarm = false,
     SelectedMap = nil,
-    Distance = 7.5,
+    HeightOffset = 7.5,
+    SkillDelay = 0.25,
+    KeyDelay = 0.05,
     MenuOpen = true,
-    SpamSkill = true,
 }
 
 local Connections = {}
+local Running = {}
 local Pages = {}
 local ScreenGui
 local MAP_FOLDER_NAMES = {"Maps", "Map", "Worlds", "World", "Stages", "Areas"}
 local ALL_LABEL = "Tất cả"
-local SkillKeys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four}
+
+local SkillKeys = {
+    Enum.KeyCode.One,
+    Enum.KeyCode.Two,
+    Enum.KeyCode.Three,
+    Enum.KeyCode.Four,
+}
 
 local C = {
     Bg = Color3.fromRGB(18, 16, 28),
@@ -34,11 +42,19 @@ local C = {
     Sub = Color3.fromRGB(150, 145, 170),
     Off = Color3.fromRGB(60, 56, 80),
     Red = Color3.fromRGB(200, 60, 80),
+    Green = Color3.fromRGB(60, 200, 120),
 }
 
 local order = 0
-local function nextOrder() order += 1 return order end
-local function track(conn) table.insert(Connections, conn) return conn end
+local function nextOrder()
+    order += 1
+    return order
+end
+
+local function track(conn)
+    table.insert(Connections, conn)
+    return conn
+end
 
 local function new(class, props)
     local inst = Instance.new(class)
@@ -57,17 +73,58 @@ end
 
 local function protectGui(gui)
     local ok = false
-    if gethui then ok = pcall(function() gui.Parent = gethui() end) end
+    if gethui then
+        ok = pcall(function() gui.Parent = gethui() end)
+    end
     if not ok or not gui.Parent then
         ok = pcall(function() gui.Parent = CoreGui end)
-        if not ok or not gui.Parent then gui.Parent = PlayerGui end
+        if not ok or not gui.Parent then
+            gui.Parent = PlayerGui
+        end
     end
+end
+
+local function ClickUIByText(textTarget, isExact)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    
+    for _, v in ipairs(playerGui:GetDescendants()) do
+        if v:IsA("TextButton") or v:IsA("ImageButton") then
+            local text = ""
+            if v:IsA("TextButton") then
+                text = v.Text
+            else
+                local label = v:FindFirstChildWhichIsA("TextLabel")
+                if label then text = label.Text end
+            end
+            
+            local match = false
+            if isExact then
+                match = (text:lower() == textTarget:lower())
+            else
+                match = (text:lower():find(textTarget:lower()) ~= nil)
+            end
+            
+            if match and v.Visible and v.AbsoluteSize.Magnitude > 0 then
+                local pos = v.AbsolutePosition + (v.AbsoluteSize / 2)
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                end)
+                return true
+            end
+        end
+    end
+    return false
 end
 
 local function getMapFolder()
     for _, name in ipairs(MAP_FOLDER_NAMES) do
         local folder = workspace:FindFirstChild(name)
-        if folder and #folder:GetChildren() > 0 then return folder end
+        if folder and #folder:GetChildren() > 0 then
+            return folder
+        end
     end
     return nil
 end
@@ -89,17 +146,15 @@ local function refreshMaps()
     return list
 end
 
-local _targetRoot = nil
-local _targetRefreshTime = 0
-local TARGET_REFRESH = 0.15
-
 local function getSearchRoot()
-    if not State.SelectedMap then return workspace end
+    if not State.SelectedMap then
+        return workspace
+    end
     local folder = getMapFolder()
     return folder and folder:FindFirstChild(State.SelectedMap) or nil
 end
 
-local function findClosestEnemy()
+local function GetClosestEnemy()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
@@ -107,133 +162,101 @@ local function findClosestEnemy()
     local searchRoot = getSearchRoot()
     if not searchRoot then return nil end
 
-    local closest, shortest = nil, math.huge
+    local closestEnemy = nil
+    local shortestDistance = math.huge
     local rootPos = root.Position
 
-    for _, obj in ipairs(searchRoot:GetChildren()) do
-        if obj:IsA("Model") and obj ~= char then
+    local children = searchRoot:GetChildren()
+    for i = 1, #children do
+        local obj = children[i]
+        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            if hum and hum.Health > 0 and enemyRoot 
-               and not Players:GetPlayerFromCharacter(obj) then
-                local dx = rootPos.X - enemyRoot.Position.X
-                local dy = rootPos.Y - enemyRoot.Position.Y
-                local dz = rootPos.Z - enemyRoot.Position.Z
-                local d = dx*dx + dy*dy + dz*dz
-                if d < shortest and d < 160000 then
-                    shortest = d
-                    closest = enemyRoot
+            if hum and hum.Health > 0 and enemyRoot then
+                local d = (rootPos - enemyRoot.Position).Magnitude
+                if d < shortestDistance and d < 400 then
+                    shortestDistance = d
+                    closestEnemy = enemyRoot
                 end
             end
         end
     end
 
-    if not closest then
+    if not closestEnemy then
         local desc = searchRoot:GetDescendants()
         for i = 1, #desc do
             local obj = desc[i]
-            if obj:IsA("Model") and obj ~= char then
+            if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
                 local hum = obj:FindFirstChildOfClass("Humanoid")
                 local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-                if hum and hum.Health > 0 and enemyRoot 
-                   and not Players:GetPlayerFromCharacter(obj) then
-                    local dx = rootPos.X - enemyRoot.Position.X
-                    local dy = rootPos.Y - enemyRoot.Position.Y
-                    local dz = rootPos.Z - enemyRoot.Position.Z
-                    local d = dx*dx + dy*dy + dz*dz
-                    if d < shortest and d < 160000 then
-                        shortest = d
-                        closest = enemyRoot
+                if hum and hum.Health > 0 and enemyRoot then
+                    local d = (rootPos - enemyRoot.Position).Magnitude
+                    if d < shortestDistance and d < 400 then
+                        shortestDistance = d
+                        closestEnemy = enemyRoot
                     end
                 end
             end
         end
     end
 
-    return closest
+    return closestEnemy
 end
 
-local _equippedTool = nil
-local function ensureTool(char, hum)
-    local tool = char:FindFirstChildOfClass("Tool")
-    if tool then _equippedTool = tool return tool end
-    if _equippedTool and _equippedTool.Parent then return _equippedTool end
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    tool = backpack and backpack:FindFirstChildOfClass("Tool")
-    if tool then
-        pcall(function() hum:EquipTool(tool) end)
-        _equippedTool = tool
+local function spamSkillKeys()
+    for _, key in ipairs(SkillKeys) do
+        if not State.AutoFarm then break end
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, key, false, game)
+        end)
+        task.wait(State.KeyDelay)
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(false, key, false, game)
+        end)
+        task.wait(State.KeyDelay)
     end
-    return tool
-end
 
-local function pressKey(key)
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true, key, false, game)
-        task.wait(0.03)
-        VirtualInputManager:SendKeyEvent(false, key, false, game)
-    end)
+    local char = LocalPlayer.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if tool then
+        pcall(function() tool:Activate() end)
+    end
 end
-
-local farmConn = nil
 
 local function startFarm()
-    if farmConn then farmConn:Disconnect() end
+    if Running.farm then return end
+    Running.farm = true
 
-    local skillAccum = 0
-    local lastSkillTime = 0
+    task.spawn(function()
+        RunService.Heartbeat:Connect(function()
+            if not State.AutoFarm or not Running.farm then return end
 
-    farmConn = RunService.Heartbeat:Connect(function(dt)
-        if not State.AutoFarm then return end
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local target = GetClosestEnemy()
 
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not (hum and root and hum.Health > 0) then return end
-
-        local now = tick()
-        if now - _targetRefreshTime > TARGET_REFRESH then
-            _targetRoot = findClosestEnemy()
-            _targetRefreshTime = now
-        end
-
-        local target = _targetRoot
-        if target and target.Parent then
-            root.AssemblyLinearVelocity = Vector3.zero
-            local targetPos = target.Position + Vector3.new(0, State.Distance, 0)
-            root.CFrame = CFrame.new(targetPos, target.Position)
-
-            local tool = ensureTool(char, hum)
-            if tool then
-                pcall(function() tool:Activate() end)
+            if root and target then
+                root.Velocity = Vector3.new(0, 0, 0)
+                local targetPos = target.Position + Vector3.new(0, State.HeightOffset, 0)
+                root.CFrame = CFrame.new(targetPos, target.Position)
             end
-
-            if State.SpamSkill then
-                skillAccum += dt
-                if skillAccum >= 0.25 then
-                    skillAccum = 0
-                    task.spawn(function()
-                        for _, key in ipairs(SkillKeys) do
-                            if not State.AutoFarm then break end
-                            pressKey(key)
-                            task.wait(0.05)
-                        end
-                    end)
-                    lastSkillTime = now
-                end
-            end
-        end
+        end)
     end)
-    track(farmConn)
+
+    task.spawn(function()
+        while State.AutoFarm and Running.farm do
+            task.wait(State.SkillDelay)
+            if State.AutoFarm and GetClosestEnemy() then
+                spamSkillKeys()
+            end
+        end
+        Running.farm = false
+    end)
 end
 
 local function stopFarm()
-    if farmConn then
-        farmConn:Disconnect()
-        farmConn = nil
-    end
-    _targetRoot = nil
-    _equippedTool = nil
+    State.AutoFarm = false
+    Running.farm = false
 end
 
 local function makeDraggable(handle, target, onClick)
@@ -346,6 +369,25 @@ local function createToggle(parent, text, default, callback)
     return set
 end
 
+local function createButton(parent, text, callback)
+    local btn = new("TextButton", {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundColor3 = C.Panel,
+        Text = text,
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 13,
+        BorderSizePixel = 0,
+        LayoutOrder = nextOrder(),
+        Parent = parent,
+    })
+    corner(btn, 8)
+    track(btn.MouseButton1Click:Connect(function()
+        if callback then task.spawn(callback) end
+    end))
+    return btn
+end
+
 local function createStepper(parent, text, default, min, max, step, callback)
     local value = default
     step = step or 1
@@ -364,26 +406,44 @@ local function createStepper(parent, text, default, min, max, step, callback)
     local minus = new("TextButton", {
         Size = UDim2.fromOffset(28, 26),
         Position = UDim2.new(1, -100, 0.5, -13),
-        BackgroundColor3 = C.Off, Text = "-", TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold, TextSize = 16, BorderSizePixel = 0, Parent = row,
+        BackgroundColor3 = C.Off,
+        Text = "-",
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        BorderSizePixel = 0,
+        Parent = row,
     })
     local valueLbl = new("TextLabel", {
-        Size = UDim2.fromOffset(36, 26),
-        Position = UDim2.new(1, -68, 0.5, -13),
-        BackgroundTransparency = 1, Text = tostring(value),
-        TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 13, Parent = row,
+        Size = UDim2.fromOffset(44, 26),
+        Position = UDim2.new(1, -72, 0.5, -13),
+        BackgroundTransparency = 1,
+        Text = tostring(value),
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 12,
+        Parent = row,
     })
     local plus = new("TextButton", {
         Size = UDim2.fromOffset(28, 26),
         Position = UDim2.new(1, -30, 0.5, -13),
-        BackgroundColor3 = C.Off, Text = "+", TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold, TextSize = 16, BorderSizePixel = 0, Parent = row,
+        BackgroundColor3 = C.Off,
+        Text = "+",
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        BorderSizePixel = 0,
+        Parent = row,
     })
     corner(minus, 6)
     corner(plus, 6)
+    local function fmt(n)
+        if n == math.floor(n) then return tostring(math.floor(n)) end
+        return string.format("%.2f", n)
+    end
     local function apply(v)
         value = math.clamp(v, min, max)
-        valueLbl.Text = string.format("%.2f", value):gsub("%.?0+$", "")
+        valueLbl.Text = fmt(value)
         if callback then task.spawn(callback, value) end
     end
     track(minus.MouseButton1Click:Connect(function() apply(value - step) end))
@@ -463,7 +523,6 @@ local function createDropdown(parent, text, getOptions, onSelect)
                 State.SelectedMap = value
                 current.Text = name
                 listFrame.Visible = false
-                _targetRoot = nil
                 if onSelect then task.spawn(onSelect, value) end
             end))
         end
@@ -532,7 +591,7 @@ local camera = workspace.CurrentCamera or workspace:WaitForChild("CurrentCamera"
 local viewport = camera.ViewportSize
 local isSmall = viewport.X < 800
 local W = isSmall and 290 or 340
-local H = isSmall and 380 or 430
+local H = isSmall and 380 or 480
 
 local Main = new("Frame", {
     Name = "Main",
@@ -628,25 +687,50 @@ local mainPage = createTab("Main")
 
 createSection(mainPage, "Auto Farm")
 createToggle(mainPage, "Bật Auto Farm", false, function(v)
-    State.AutoFarm = v
     if v then
+        State.AutoFarm = true
         startFarm()
     else
         stopFarm()
     end
 end)
 createDropdown(mainPage, "Chọn Map", refreshMaps, nil)
-createStepper(mainPage, "Độ cao bay (HeightOffset)", State.Distance, 1, 20, 0.5, function(v)
-    State.Distance = v
+createStepper(mainPage, "Độ cao bay (Height Offset)", State.HeightOffset, 0, 20, 0.5, function(v)
+    State.HeightOffset = v
+end)
+createStepper(mainPage, "Chu kỳ spam skill (giây)", State.SkillDelay, 0.1, 2, 0.05, function(v)
+    State.SkillDelay = v
+end)
+createStepper(mainPage, "Delay giữa các phím (giây)", State.KeyDelay, 0.01, 0.5, 0.01, function(v)
+    State.KeyDelay = v
 end)
 
-createSection(mainPage, "Skill")
-createToggle(mainPage, "Spam Skill (1,2,3,4)", true, function(v)
-    State.SpamSkill = v
+createSection(mainPage, "Game Modes (Chế độ chơi)")
+createButton(mainPage, "Mở Worlds (Thế giới)", function()
+    ClickUIByText("Worlds")
+end)
+createButton(mainPage, "Mở Missions (Nhiệm vụ)", function()
+    ClickUIByText("Missions")
+end)
+createButton(mainPage, "Mở Challenges (Thử thách)", function()
+    ClickUIByText("Challenges")
+end)
+createButton(mainPage, "Mở Gauntlet", function()
+    ClickUIByText("Gauntlet")
+end)
+
+createSection(mainPage, "Auto Play / Matchmake")
+createButton(mainPage, "Auto Select (Bấm nút V/Select)", function()
+    local success = ClickUIByText("Select")
+    if not success then
+        success = ClickUIByText("V", true)
+    end
+end)
+createButton(mainPage, "Auto Matchmake (Ghép trận)", function()
+    ClickUIByText("Matchmake")
 end)
 
 env.DarkwenCleanup = function()
-    State.AutoFarm = false
     stopFarm()
     for _, conn in ipairs(Connections) do
         pcall(function() conn:Disconnect() end)
