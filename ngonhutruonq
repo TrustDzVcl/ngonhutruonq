@@ -14,7 +14,6 @@ local RemoteBank = require(ReplicatedStorage:WaitForChild("RemoteBank"))
 
 local State = {
     AutoFarm = false,
-    SelectedMap = nil,
     HeightOffset = 7.5,
     SkillDelay = 0.15,
     MenuOpen = true,
@@ -24,8 +23,6 @@ local Connections = {}
 local Running = {}
 local Pages = {}
 local ScreenGui
-local MAP_FOLDER_NAMES = {"Maps", "Map", "Worlds", "World", "Stages", "Areas"}
-local ALL_LABEL = "Tất cả"
 
 local C = {
     Bg = Color3.fromRGB(15, 15, 20),
@@ -35,7 +32,6 @@ local C = {
     Sub = Color3.fromRGB(150, 150, 165),
     Off = Color3.fromRGB(45, 45, 55),
     Red = Color3.fromRGB(220, 60, 80),
-    Hover = Color3.fromRGB(45, 45, 55),
 }
 
 local order = 0
@@ -58,13 +54,12 @@ local function corner(obj, radius)
 end
 
 local function addStroke(obj, color, thickness)
-    local stroke = new("UIStroke", {
+    return new("UIStroke", {
         Color = color or C.Accent,
         Thickness = thickness or 1.5,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
         Parent = obj
     })
-    return stroke
 end
 
 local function protectGui(gui)
@@ -76,37 +71,6 @@ local function protectGui(gui)
     end
 end
 
-local function getMapFolder()
-    for _, name in ipairs(MAP_FOLDER_NAMES) do
-        local folder = workspace:FindFirstChild(name)
-        if folder and #folder:GetChildren() > 0 then return folder end
-    end
-    return nil
-end
-
-local function refreshMaps()
-    local list = {}
-    local folder = getMapFolder()
-    if folder then
-        for _, child in ipairs(folder:GetChildren()) do
-            if child:IsA("Model") or child:IsA("Folder") then
-                table.insert(list, child.Name)
-            end
-        end
-    end
-    table.sort(list)
-    if State.SelectedMap and not table.find(list, State.SelectedMap) then
-        State.SelectedMap = nil
-    end
-    return list
-end
-
-local function getSearchRoot()
-    if not State.SelectedMap then return workspace end
-    local folder = getMapFolder()
-    return folder and folder:FindFirstChild(State.SelectedMap) or nil
-end
-
 local function GetClosestEnemy()
     local currentMap = LocalPlayer:GetAttribute("CurrentMap")
     if currentMap == "Lobby" or not currentMap then return nil end
@@ -115,14 +79,11 @@ local function GetClosestEnemy()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
 
-    local searchRoot = getSearchRoot()
-    if not searchRoot then return nil end
-
     local closestEnemy = nil
     local shortestDistance = math.huge
     local rootPos = root.Position
 
-    local children = searchRoot:GetChildren()
+    local children = workspace:GetChildren()
     for i = 1, #children do
         local obj = children[i]
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
@@ -139,7 +100,7 @@ local function GetClosestEnemy()
     end
 
     if not closestEnemy then
-        local desc = searchRoot:GetDescendants()
+        local desc = workspace:GetDescendants()
         for i = 1, #desc do
             local obj = desc[i]
             if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
@@ -352,56 +313,6 @@ local function createStepper(parent, text, default, min, max, step, callback)
     track(plus.MouseButton1Click:Connect(function() apply(value + step) end))
 end
 
-local function createDropdown(parent, text, getOptions, onSelect)
-    local header = createRow(parent, 38)
-    local headerBtn = new("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Parent = header })
-    new("TextLabel", {
-        Size = UDim2.new(0.5, -12, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1,
-        Text = text, TextColor3 = C.Text, Font = Enum.Font.GothamMedium, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
-    })
-    local current = new("TextLabel", {
-        Size = UDim2.new(0.5, -30, 1, 0), Position = UDim2.new(0.5, 0, 0, 0), BackgroundTransparency = 1,
-        Text = State.SelectedMap or ALL_LABEL, TextColor3 = C.Accent, Font = Enum.Font.GothamBold,
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd, Parent = header,
-    })
-    local listFrame = new("ScrollingFrame", {
-        Size = UDim2.new(1, 0, 0, 150), BackgroundColor3 = C.Bg, BorderSizePixel = 0,
-        ScrollBarThickness = 2, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Visible = false, LayoutOrder = nextOrder(), Parent = parent,
-    })
-    corner(listFrame, 8)
-    addStroke(listFrame, Color3.fromRGB(50, 50, 65), 1)
-    
-    new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2), Parent = listFrame })
-    new("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), Parent = listFrame })
-
-    local function rebuild()
-        for _, child in ipairs(listFrame:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-        local options = {ALL_LABEL}
-        for _, name in ipairs(getOptions()) do table.insert(options, name) end
-        for i, name in ipairs(options) do
-            local item = new("TextButton", {
-                Size = UDim2.new(1, -8, 0, 30), BackgroundColor3 = C.Panel, Text = name,
-                TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 12, BorderSizePixel = 0,
-                LayoutOrder = i, Parent = listFrame,
-            })
-            corner(item, 4)
-            track(item.MouseButton1Click:Connect(function()
-                local value = (name ~= ALL_LABEL) and name or nil
-                State.SelectedMap = value
-                current.Text = name
-                listFrame.Visible = false
-                if onSelect then task.spawn(onSelect, value) end
-            end))
-        end
-    end
-
-    track(headerBtn.MouseButton1Click:Connect(function()
-        if not listFrame.Visible then rebuild() end
-        listFrame.Visible = not listFrame.Visible
-    end))
-end
-
 local function createTab(name)
     local tabBar = ScreenGui.Main:FindFirstChild("TabBar")
     local btn = new("TextButton", {
@@ -439,10 +350,9 @@ ScreenGui = new("ScreenGui", {
 protectGui(ScreenGui)
 
 local camera = workspace.CurrentCamera or workspace:WaitForChild("CurrentCamera")
-local viewport = camera.ViewportSize
-local isSmall = viewport.X < 800
-local W = isSmall and 290 or 320
-local H = isSmall and 380 or 420
+local isSmall = camera.ViewportSize.X < 800
+local W = isSmall and 260 or 280
+local H = isSmall and 280 or 300
 
 local Main = new("Frame", {
     Name = "Main", Size = UDim2.fromOffset(W, H), Position = UDim2.fromScale(0.5, 0.5),
@@ -512,9 +422,8 @@ createToggle(mainPage, " Auto Farm ", false, function(v)
         stopFarm()
     end
 end)
-createDropdown(mainPage, "Chọn Map", refreshMaps, nil)
 createStepper(mainPage, "Độ cao bay", State.HeightOffset, 0, 20, 0.5, function(v) State.HeightOffset = v end)
-createStepper(mainPage, "Tốc độ đánh (Giây)", State.SkillDelay, 0.05, 1, 0.01, function(v) State.SkillDelay = v end)
+createStepper(mainPage, "Tốc độ đánh", State.SkillDelay, 0.05, 1, 0.01, function(v) State.SkillDelay = v end)
 
 env.TrustCleanup = function()
     stopFarm()
