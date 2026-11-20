@@ -1,63 +1,91 @@
--- 1. DỌN DẸP CÁC BẢNG CŨ BỊ KẸT
-local CoreGui = game:GetService("CoreGui")
-local PlayerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
-
-if CoreGui:FindFirstChild("TestGUI_Moi") then CoreGui.TestGUI_Moi:Destroy() end
-if PlayerGui:FindFirstChild("TestGUI_Moi") then PlayerGui.TestGUI_Moi:Destroy() end
-if CoreGui:FindFirstChild("DarkwenMenu") then CoreGui.DarkwenMenu:Destroy() end
-if PlayerGui:FindFirstChild("DarkwenMenu") then PlayerGui.DarkwenMenu:Destroy() end
-
--- 2. KHỞI TẠO MENU MỚI
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local LocalPlayer = Players.LocalPlayer
 
-local Features = { AutoFarm = false, Fly = false, HeightOffset = 7.5, FlySpeed = 50, MenuOpen = true }
-local Running = { farm = false }
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DarkwenMenu"
-screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 999999
-
-local success = pcall(function()
-    screenGui.Parent = CoreGui
+local RemoteBank
+pcall(function()
+    RemoteBank = require(ReplicatedStorage:WaitForChild("RemoteBank", 5))
 end)
-if not success then
-    screenGui.Parent = PlayerGui
+
+local Features = {
+    AutoFarm = false,
+    Punch = true,
+    Skill = true,
+    HeightOffset = 7.5,
+    SkillDelay = 0.15,
+    Fly = false,
+    FlySpeed = 50,
+    ESP_Enemies = false,
+    ESP_Players = false,
+    AutoChallenge = false,
+    MenuOpen = true
+}
+
+local Running = { farm = false, challenge = false }
+local Pages = {}
+local ScreenGui
+
+local function ClickUIByText(textTarget, isExact)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    for _, v in ipairs(playerGui:GetDescendants()) do
+        if v:IsA("TextButton") or v:IsA("ImageButton") then
+            local text = v:IsA("TextButton") and v.Text or (v:FindFirstChildWhichIsA("TextLabel") and v:FindFirstChildWhichIsA("TextLabel").Text or "")
+            local match = false
+            if isExact then match = (text:lower() == textTarget:lower())
+            else match = (text:lower():find(textTarget:lower()) ~= nil) end
+            
+            if match and v.Visible and v.AbsoluteSize.Magnitude > 0 then
+                local pos = v.AbsolutePosition + (v.AbsoluteSize / 2)
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                end)
+                return true
+            end
+        end
+    end
+    return false
 end
 
--- ================= LOGIC =================
 local function GetClosestEnemy()
     local currentMap = LocalPlayer:GetAttribute("CurrentMap")
     if currentMap == "Lobby" or not currentMap then return nil end
+
     local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
     
-    local closest = nil
-    local dist = math.huge
-    for _, v in pairs(workspace:GetChildren()) do
-        if v:IsA("Model") and v ~= char and not Players:GetPlayerFromCharacter(v) then
-            local hum = v:FindFirstChildOfClass("Humanoid")
-            local eHrp = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("Torso")
-            if hum and hum.Health > 0 and eHrp then
-                local d = (hrp.Position - eHrp.Position).Magnitude
-                if d < dist and d < 400 then
-                    dist = d
-                    closest = eHrp
+    local closestEnemy = nil
+    local shortestDistance = math.huge
+    local rootPos = root.Position
+
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+            if hum and hum.Health > 0 and enemyRoot then
+                local d = (rootPos - enemyRoot.Position).Magnitude
+                if d < shortestDistance and d < 400 then
+                    shortestDistance = d
+                    closestEnemy = enemyRoot
                 end
             end
         end
     end
-    return closest
+    return closestEnemy
 end
 
 local function startFarm()
     if Running.farm then return end
     Running.farm = true
+    
     task.spawn(function()
         while Features.AutoFarm and Running.farm do
             local target = GetClosestEnemy()
@@ -68,16 +96,20 @@ local function startFarm()
                     hrp.Velocity = Vector3.new(0, 0, 0)
                     hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, Features.HeightOffset, 0), target.Position)
                 end
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                    task.wait(0.02)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
-                    task.wait(0.02)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
-                end)
+                
+                if RemoteBank then
+                    pcall(function()
+                        if Features.Punch then RemoteBank.PunchRemote:Fire() end
+                        if Features.Skill then RemoteBank.CastPower:Fire({ targetPosition = target.Position }) end
+                    end)
+                else
+                    pcall(function()
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                    end)
+                end
             end
-            task.wait(0.15)
+            task.wait(Features.SkillDelay)
         end
         Running.farm = false
     end)
@@ -125,137 +157,130 @@ local function updateFly()
     end
 end
 
--- ================= UI =================
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 280, 0, 300)
-Main.Position = UDim2.new(0.5, -140, 0.5, -150)
-Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-Main.BorderSizePixel = 0
-Main.Parent = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
-corner.Parent = Main
-
-local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = Main
-local tc = Instance.new("UICorner")
-tc.CornerRadius = UDim.new(0, 12)
-tc.Parent = TitleBar
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -50, 1, 0)
-Title.Position = UDim2.fromOffset(12, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "DARKWEN MOBILE"
-Title.TextColor3 = Color3.fromRGB(130, 90, 255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = TitleBar
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.fromOffset(30, 30)
-CloseBtn.Position = UDim2.new(1, -35, 0.5, -15)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.new(1, 1, 1)
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Parent = TitleBar
-local cc = Instance.new("UICorner")
-cc.CornerRadius = UDim.new(0, 6)
-cc.Parent = CloseBtn
-
--- Kéo thả
-local dragging, dragStart, startPos = false, nil, nil
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = Main.Position
+local espRunning = false
+local function updateESP()
+    if not Features.ESP_Enemies and not Features.ESP_Players then
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v.Name == "DarkwenESP" then v:Destroy() end
+        end
+        return
     end
-end)
-UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    if espRunning then return end
+    espRunning = true
+    task.spawn(function()
+        while Features.ESP_Enemies or Features.ESP_Players do
+            task.wait(1)
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("Model") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v ~= LocalPlayer.Character then
+                    local isPlayer = Players:GetPlayerFromCharacter(v) ~= nil
+                    local shouldESP = (isPlayer and Features.ESP_Players) or (not isPlayer and Features.ESP_Enemies)
+                    if shouldESP then
+                        if not v:FindFirstChild("DarkwenESP") then
+                            local hl = Instance.new("Highlight")
+                            hl.Name = "DarkwenESP"
+                            hl.FillColor = isPlayer and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(255, 50, 50)
+                            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                            hl.FillTransparency = 0.5
+                            hl.Parent = v
+                        end
+                    else
+                        local hl = v:FindFirstChild("DarkwenESP")
+                        if hl then hl:Destroy() end
+                    end
+                end
+            end
+        end
+        espRunning = false
+    end)
+end
+
+local function startAutoChallenge()
+    if Running.challenge then return end
+    Running.challenge = true
+    task.spawn(function()
+        while Features.AutoChallenge and Running.challenge do
+            ClickUIByText("Challenges")
+            task.wait(1.5)
+            ClickUIByText("Daily Challenge")
+            task.wait(1.5)
+            local clickedPlay = ClickUIByText("Select") or ClickUIByText("V", true)
+            if clickedPlay then task.wait(10) else task.wait(3) end
+        end
+        Running.challenge = false
+    end)
+end
+
+local function new(class, props)
+    local inst = Instance.new(class)
+    local parent = props.Parent
+    props.Parent = nil
+    for k, v in pairs(props) do
+        pcall(function() inst[k] = v end)
     end
-end)
-UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
+    inst.Parent = parent
+    return inst
+end
+
+local function corner(obj, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius)
+    c.Parent = obj
+end
+
+ScreenGui = new("ScreenGui", {Name = "DarkwenMenu", ResetOnSpawn = false, DisplayOrder = 999999, IgnoreGuiInset = true})
+local s = pcall(function() ScreenGui.Parent = CoreGui end)
+if not s then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local Main = new("Frame", {
+    Name = "Main", Size = UDim2.new(0, 320, 0, 420), Position = UDim2.new(0.5, -160, 0.5, -210),
+    BackgroundColor3 = Color3.fromRGB(15, 15, 20), BorderSizePixel = 0, Parent = ScreenGui
+})
+corner(Main, 12)
+
+local TitleBar = new("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = Color3.fromRGB(28, 28, 35), BorderSizePixel = 0, Parent = Main})
+corner(TitleBar, 12)
+new("TextLabel", {Size = UDim2.new(1, -50, 1, 0), Position = UDim2.fromOffset(14, 0), BackgroundTransparency = 1, Text = "DARKWEN | HUB", TextColor3 = Color3.fromRGB(130, 90, 255), Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, Parent = TitleBar})
+local CloseBtn = new("TextButton", {Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, -38, 0.5, -15), BackgroundColor3 = Color3.fromRGB(220, 60, 80), Text = "X", TextColor3 = Color3.new(1,1,1), Font = Enum.Font.GothamBold, TextSize = 12, BorderSizePixel = 0, Parent = TitleBar})
+corner(CloseBtn, 6)
+
+local TabBar = new("Frame", {Name = "TabBar", Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 48), BackgroundTransparency = 1, Parent = Main})
+new("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = TabBar})
+
+local function setMenu(open) Features.MenuOpen = open Main.Visible = open end
+CloseBtn.MouseButton1Click:Connect(function() setMenu(false) end)
+
+local FloatBtn = new("TextButton", {Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0, 12, 0.5, -23), BackgroundColor3 = Color3.fromRGB(130, 90, 255), Text = "D", TextColor3 = Color3.new(1,1,1), Font = Enum.Font.GothamBold, TextSize = 18, BorderSizePixel = 0, AutoButtonColor = false, Parent = ScreenGui})
+corner(FloatBtn, 23)
+FloatBtn.MouseButton1Click:Connect(function() setMenu(not Features.MenuOpen) end)
+setMenu(true)
+
+local function createTab(name)
+    local btn = new("TextButton", {Size = UDim2.new(0, 70, 1, 0), BackgroundColor3 = Color3.fromRGB(28, 28, 35), Text = name, TextColor3 = Color3.fromRGB(150, 150, 165), Font = Enum.Font.GothamBold, TextSize = 12, BorderSizePixel = 0, Parent = TabBar})
+    corner(btn, 6)
+    local page = new("ScrollingFrame", {Size = UDim2.new(1, -20, 1, -88), Position = UDim2.fromOffset(10, 80), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false, Parent = Main})
+    new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = page})
+    
+    local function activate()
+        for _, p in ipairs(Pages) do p.Page.Visible = false p.Btn.TextColor3 = Color3.fromRGB(150, 150, 165) p.Btn.BackgroundColor3 = Color3.fromRGB(28, 28, 35) end
+        page.Visible = true btn.TextColor3 = Color3.new(1,1,1) btn.BackgroundColor3 = Color3.fromRGB(130, 90, 255)
     end
-end)
+    btn.MouseButton1Click:Connect(activate)
+    table.insert(Pages, {Btn = btn, Page = page})
+    if #Pages == 1 then activate() end
+    return page
+end
 
-CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
-
-local FloatBtn = Instance.new("TextButton")
-FloatBtn.Size = UDim2.fromOffset(46, 46)
-FloatBtn.Position = UDim2.new(0, 12, 0.5, -23)
-FloatBtn.BackgroundColor3 = Color3.fromRGB(130, 90, 255)
-FloatBtn.Text = "D"
-FloatBtn.TextColor3 = Color3.new(1, 1, 1)
-FloatBtn.Font = Enum.Font.GothamBold
-FloatBtn.TextSize = 18
-FloatBtn.Parent = screenGui
-local fc = Instance.new("UICorner")
-fc.CornerRadius = UDim.new(0, 23)
-fc.Parent = FloatBtn
-FloatBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
-
--- NÚT CHỨC NĂNG
-local yPos = 50
-local function createToggle(text, default, callback)
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -20, 0, 38)
-    row.Position = UDim2.new(0, 10, 0, yPos)
-    row.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    row.Parent = Main
-    local rc = Instance.new("UICorner")
-    rc.CornerRadius = UDim.new(0, 8)
-    rc.Parent = row
-    yPos = yPos + 46
-    
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -70, 1, 0)
-    lbl.Position = UDim2.fromOffset(12, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = text
-    lbl.TextColor3 = Color3.new(1, 1, 1)
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
-    
-    local switch = Instance.new("Frame")
-    switch.Size = UDim2.fromOffset(44, 22)
-    switch.Position = UDim2.new(1, -56, 0.5, -11)
-    switch.BackgroundColor3 = default and Color3.fromRGB(130, 90, 255) or Color3.fromRGB(60, 60, 70)
-    switch.Parent = row
-    local sc = Instance.new("UICorner")
-    sc.CornerRadius = UDim.new(0, 11)
-    sc.Parent = switch
-    
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(18, 18)
-    knob.Position = default and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)
-    knob.BackgroundColor3 = Color3.new(1, 1, 1)
-    knob.Parent = switch
-    local kc = Instance.new("UICorner")
-    kc.CornerRadius = UDim.new(0, 9)
-    kc.Parent = knob
-    
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 1, 0)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-    btn.Parent = row
-    
+local function createToggle(parent, text, default, callback)
+    local row = new("Frame", {Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = Color3.fromRGB(28, 28, 35), BorderSizePixel = 0, Parent = parent})
+    corner(row, 8)
+    new("TextLabel", {Size = UDim2.new(1, -70, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.new(1,1,1), Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = row})
+    local switch = new("Frame", {Size = UDim2.fromOffset(44, 22), Position = UDim2.new(1, -56, 0.5, -11), BackgroundColor3 = default and Color3.fromRGB(130, 90, 255) or Color3.fromRGB(60, 60, 70), BorderSizePixel = 0, Parent = row})
+    corner(switch, 11)
+    local knob = new("Frame", {Size = UDim2.fromOffset(18, 18), Position = default and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, Parent = switch})
+    corner(knob, 9)
+    local click = new("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Parent = row})
     local state = default
-    btn.MouseButton1Click:Connect(function()
+    click.MouseButton1Click:Connect(function()
         state = not state
         switch.BackgroundColor3 = state and Color3.fromRGB(130, 90, 255) or Color3.fromRGB(60, 60, 70)
         knob.Position = state and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)
@@ -263,16 +288,66 @@ local function createToggle(text, default, callback)
     end)
 end
 
-createToggle("Bật Auto Farm", false, function(v)
+local function createStepper(parent, text, default, min, max, step, callback)
+    local value = default
+    local row = new("Frame", {Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = Color3.fromRGB(28, 28, 35), BorderSizePixel = 0, Parent = parent})
+    corner(row, 8)
+    new("TextLabel", {Size = UDim2.new(1, -120, 1, 0), Position = UDim2.fromOffset(12, 0), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.new(1,1,1), Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Parent = row})
+    local minus = new("TextButton", {Size = UDim2.fromOffset(28, 26), Position = UDim2.new(1, -100, 0.5, -13), BackgroundColor3 = Color3.fromRGB(60, 60, 70), Text = "-", TextColor3 = Color3.new(1,1,1), Font = Enum.Font.GothamBold, TextSize = 16, BorderSizePixel = 0, Parent = row})
+    local valLbl = new("TextLabel", {Size = UDim2.fromOffset(44, 26), Position = UDim2.new(1, -72, 0.5, -13), BackgroundTransparency = 1, Text = tostring(value), TextColor3 = Color3.fromRGB(130, 90, 255), Font = Enum.Font.GothamBold, TextSize = 13, Parent = row})
+    local plus = new("TextButton", {Size = UDim2.fromOffset(28, 26), Position = UDim2.new(1, -30, 0.5, -13), BackgroundColor3 = Color3.fromRGB(60, 60, 70), Text = "+", TextColor3 = Color3.new(1,1,1), Font = Enum.Font.GothamBold, TextSize = 16, BorderSizePixel = 0, Parent = row})
+    corner(minus, 6) corner(plus, 6)
+    local function apply(v)
+        value = math.clamp(v, min, max)
+        valLbl.Text = tostring(value)
+        if callback then callback(value) end
+    end
+    minus.MouseButton1Click:Connect(function() apply(value - step) end)
+    plus.MouseButton1Click:Connect(function() apply(value + step) end)
+end
+
+local function createButton(parent, text, callback)
+    local btn = new("TextButton", {Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = Color3.fromRGB(28, 28, 35), Text = text, TextColor3 = Color3.new(1,1,1), Font = Enum.Font.GothamBold, TextSize = 13, BorderSizePixel = 0, Parent = parent})
+    corner(btn, 8)
+    btn.MouseButton1Click:Connect(callback)
+end
+
+local function createSection(parent, text)
+    new("TextLabel", {Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, Text = string.upper(text), TextColor3 = Color3.fromRGB(130, 90, 255), Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Parent = parent})
+end
+
+local mainPage = createTab("Main")
+createSection(mainPage, "Auto Farm (Ngoài Lobby)")
+createToggle(mainPage, "Bật Auto Farm", false, function(v)
     Features.AutoFarm = v
     if v then startFarm() else Running.farm = false end
 end)
+createStepper(mainPage, "Độ cao bay", Features.HeightOffset, 0, 20, 0.5, function(v) Features.HeightOffset = v end)
+createStepper(mainPage, "Tốc độ đánh (Giây)", Features.SkillDelay, 0.05, 1, 0.01, function(v) Features.SkillDelay = v end)
 
-createToggle("Bật Fly (Bay lượn)", false, function(v)
+createSection(mainPage, "Tùy chọn đánh")
+createToggle(mainPage, "Đánh thường (Punch)", true, function(v) Features.Punch = v end)
+createToggle(mainPage, "Dùng Skill (Power)", true, function(v) Features.Skill = v end)
+
+local playerPage = createTab("Player")
+createSection(playerPage, "Bay lượn (Fly)")
+createToggle(playerPage, "Bật Fly (WASD để bay)", false, function(v)
     Features.Fly = v
     updateFly()
 end)
+createStepper(playerPage, "Tốc độ bay", Features.FlySpeed, 10, 300, 10, function(v) Features.FlySpeed = v end)
 
-setMenu = function(open) Main.Visible = open end
-setMenu(true)
-print("Darkwen Menu Đã Chạy Thành Công!")
+local modesPage = createTab("Modes")
+createSection(modesPage, "Tự động đi Solo")
+createToggle(modesPage, "Auto Join Challenge", false, function(v)
+    Features.AutoChallenge = v
+    if v then startAutoChallenge() else Running.challenge = false end
+end)
+createButton(modesPage, "Auto Select (Bấm nút V)", function()
+    ClickUIByText("Select") or ClickUIByText("V", true)
+end)
+
+local visualPage = createTab("Visual")
+createSection(visualPage, "ESP (Nhìn xuyên tường)")
+createToggle(visualPage, "ESP Quái vật", false, function(v) Features.ESP_Enemies = v updateESP() end)
+createToggle(visualPage, "ESP Người chơi", false, function(v) Features.ESP_Players = v updateESP() end)
