@@ -1,1 +1,92 @@
+_G.AutoFarm = false
+local HeightOffset = 7.5
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 140, 0, 35)
+ToggleBtn.Position = UDim2.new(0.5, -70, 0, 10)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Text = "Fly & Skill: OFF"
+ToggleBtn.Font = Enum.Font.SourceSansBold
+ToggleBtn.TextSize = 15
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    _G.AutoFarm = not _G.AutoFarm
+    if _G.AutoFarm then
+        ToggleBtn.Text = "Fly & Skill: ON"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    else
+        ToggleBtn.Text = "Fly & Skill: OFF"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    end
+end)
+
+local function GetClosestEnemy()
+    local closestEnemy = nil
+    local shortestDistance = math.huge
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if not root then return nil end
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= char then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+            
+            if hum and hum.Health > 0 and enemyRoot and not Players:GetPlayerFromCharacter(obj) then
+                local distance = (root.Position - enemyRoot.Position).Magnitude
+                if distance < shortestDistance and distance < 400 then
+                    shortestDistance = distance
+                    closestEnemy = enemyRoot
+                end
+            end
+        end
+    end
+    return closestEnemy
+end
+
+RunService.Heartbeat:Connect(function()
+    if not _G.AutoFarm then return end
+    
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local target = GetClosestEnemy()
+
+    if root and target then
+        root.Velocity = Vector3.new(0, 0, 0)
+        local targetPos = target.Position + Vector3.new(0, HeightOffset, 0)
+        root.CFrame = CFrame.new(targetPos, target.Position)
+    end
+end)
+
+local SkillKeys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four}
+
+task.spawn(function()
+    while task.wait(0.25) do
+        if _G.AutoFarm and GetClosestEnemy() then
+            for _, key in ipairs(SkillKeys) do
+                if not _G.AutoFarm then break end
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+            end
+            
+            local char = LocalPlayer.Character
+            local tool = char and char:FindFirstChildOfClass("Tool")
+            if tool then
+                tool:Activate()
+            end
+        end
+    end
+end)
 
