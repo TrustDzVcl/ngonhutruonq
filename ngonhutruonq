@@ -69,7 +69,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-local SkillKeys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four}
+local SkillKeys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Five}
 
 task.spawn(function()
     while task.wait(0.25) do
