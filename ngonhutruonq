@@ -1,36 +1,343 @@
-local player = game.Players.LocalPlayer
-local coreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local CoreGui = game:GetService("CoreGui")
 
--- Đổi tên GUI thành tên vô hại để lách Anti-Cheat
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TestGUI_Moi"
-screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 999999
-screenGui.IgnoreGuiInset = true
+local LocalPlayer = Players.LocalPlayer
 
--- Dùng pcall gán vào CoreGui y hệt khung đỏ
-local success, err = pcall(function()
-    screenGui.Parent = coreGui
-end)
+-- CẤU HÌNH
+local Features = {
+    AutoFarm = false,
+    Fly = false,
+    FlySpeed = 50,
+    HeightOffset = 7.5,
+    SkillDelay = 0.15,
+    MenuOpen = true,
+}
 
-if not success then
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+local Running = { farm = false }
+local Connections = {}
+
+-- HÀM TẠO UI AN TOÀN
+local function new(class, props)
+    local inst = Instance.new(class)
+    local parent = props.Parent
+    props.Parent = nil
+    for k, v in pairs(props) do
+        pcall(function() inst[k] = v end)
+    end
+    inst.Parent = parent
+    return inst
 end
 
--- Tạo Frame màu XANH LÁ để dễ nhìn
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 300, 0, 200)
-frame.Position = UDim2.new(0.5, -150, 0.5, -100)
-frame.BackgroundColor3 = Color3.fromRGB(50, 200, 100) -- Xanh lá
-frame.BorderSizePixel = 5
-frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
-frame.Parent = screenGui
+local function corner(obj, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius)
+    c.Parent = obj
+end
 
-local text = Instance.new("TextLabel")
-text.Size = UDim2.new(1, 0, 1, 0)
-text.BackgroundTransparency = 1
-text.Text = "ĐÂY LÀ MENU MỚI\nNẾU BẠN THẤY MÀU XANH NÀY\nLÀ CODE ĐÃ CHẠY!"
-text.TextColor3 = Color3.fromRGB(255, 255, 255)
-text.TextScaled = true
-text.Font = Enum.Font.GothamBold
-text.Parent = frame
+-- KHỞI TẠO GUI (Dùng đúng cấu trúc bản test)
+local screenGui = new("ScreenGui", {
+    Name = "DarkwenMenu",
+    ResetOnSpawn = false,
+    DisplayOrder = 999999,
+    IgnoreGuiInset = true
+})
+
+local success = pcall(function()
+    screenGui.Parent = CoreGui
+end)
+if not success then
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- ================= LOGIC FARM =================
+local function GetClosestEnemy()
+    local currentMap = LocalPlayer:GetAttribute("CurrentMap")
+    if currentMap == "Lobby" or not currentMap then return nil end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local closest = nil
+    local dist = math.huge
+    
+    for _, v in pairs(workspace:GetChildren()) do
+        if v:IsA("Model") and v ~= char and not Players:GetPlayerFromCharacter(v) then
+            local hum = v:FindFirstChildOfClass("Humanoid")
+            local eHrp = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("Torso")
+            if hum and hum.Health > 0 and eHrp then
+                local d = (hrp.Position - eHrp.Position).Magnitude
+                if d < dist and d < 400 then
+                    dist = d
+                    closest = eHrp
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function startFarm()
+    if Running.farm then return end
+    Running.farm = true
+    
+    task.spawn(function()
+        while Features.AutoFarm and Running.farm do
+            local target = GetClosestEnemy()
+            if target then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp and not Features.Fly then
+                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, Features.HeightOffset, 0), target.Position)
+                end
+                
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                    task.wait(0.02)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                    
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game)
+                    task.wait(0.02)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game)
+                end)
+            end
+            task.wait(Features.SkillDelay)
+        end
+        Running.farm = false
+    end)
+end
+
+-- ================= LOGIC FLY =================
+local FlyState = { Conn = nil, BV = nil, BG = nil }
+local function updateFly()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if Features.Fly and hrp then
+        if not FlyState.BV then
+            FlyState.BV = Instance.new("BodyVelocity", hrp)
+            FlyState.BV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            FlyState.BV.Velocity = Vector3.zero
+            FlyState.BG = Instance.new("BodyGyro", hrp)
+            FlyState.BG.P = 9e4
+            FlyState.BG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+            FlyState.BG.CFrame = hrp.CFrame
+        end
+        if not FlyState.Conn then
+            FlyState.Conn = RunService.RenderStepped:Connect(function()
+                if not Features.Fly or not hrp or not FlyState.BV then return end
+                local camera = workspace.CurrentCamera
+                local moveDir = Vector3.zero
+                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                
+                if moveDir.Magnitude > 0 then
+                    FlyState.BV.Velocity = moveDir.Unit * Features.FlySpeed
+                    FlyState.BG.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + moveDir.Unit)
+                else
+                    FlyState.BV.Velocity = Vector3.zero
+                    FlyState.BG.CFrame = camera.CFrame
+                end
+            end)
+        end
+    else
+        if FlyState.Conn then FlyState.Conn:Disconnect() FlyState.Conn = nil end
+        if FlyState.BV then FlyState.BV:Destroy() FlyState.BV = nil end
+        if FlyState.BG then FlyState.BG:Destroy() FlyState.BG = nil end
+    end
+end
+
+-- ================= GIAO DIỆN MENU =================
+local Main = new("Frame", {
+    Name = "Main",
+    Size = UDim2.new(0, 280, 0, 320),
+    Position = UDim2.new(0.5, -140, 0.5, -160),
+    BackgroundColor3 = Color3.fromRGB(20, 20, 25),
+    BorderSizePixel = 0,
+    Parent = screenGui
+})
+corner(Main, 12)
+
+local TitleBar = new("Frame", {
+    Size = UDim2.new(1, 0, 0, 40),
+    BackgroundColor3 = Color3.fromRGB(30, 30, 40),
+    BorderSizePixel = 0,
+    Parent = Main
+})
+corner(TitleBar, 12)
+
+new("TextLabel", {
+    Size = UDim2.new(1, -50, 1, 0),
+    Position = UDim2.fromOffset(12, 0),
+    BackgroundTransparency = 1,
+    Text = "DARKWEN MOBILE",
+    TextColor3 = Color3.fromRGB(130, 90, 255),
+    Font = Enum.Font.GothamBold,
+    TextSize = 14,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = TitleBar
+})
+
+local CloseBtn = new("TextButton", {
+    Size = UDim2.fromOffset(30, 30),
+    Position = UDim2.new(1, -35, 0.5, -15),
+    BackgroundColor3 = Color3.fromRGB(200, 50, 50),
+    Text = "X",
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 12,
+    Parent = TitleBar
+})
+corner(CloseBtn, 6)
+
+-- Kéo thả menu
+local dragging, dragStart, startPos = false, nil, nil
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+local function setMenu(open)
+    Features.MenuOpen = open
+    Main.Visible = open
+end
+CloseBtn.MouseButton1Click:Connect(function() setMenu(false) end)
+
+-- Nút nổi để mở lại menu
+local FloatBtn = new("TextButton", {
+    Size = UDim2.fromOffset(46, 46),
+    Position = UDim2.new(0, 12, 0.5, -23),
+    BackgroundColor3 = Color3.fromRGB(130, 90, 255),
+    Text = "D",
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 18,
+    Parent = screenGui
+})
+corner(FloatBtn, 23)
+FloatBtn.MouseButton1Click:Connect(function() setMenu(not Features.MenuOpen) end)
+
+-- ================= CÁC NÚT CHỨC NĂNG =================
+local yPos = 50
+
+local function createToggle(text, default, callback)
+    local row = new("Frame", {
+        Size = UDim2.new(1, -20, 0, 38),
+        Position = UDim2.new(0, 10, 0, yPos),
+        BackgroundColor3 = Color3.fromRGB(35, 35, 45),
+        Parent = Main
+    })
+    corner(row, 8)
+    yPos = yPos + 46
+    
+    new("TextLabel", {
+        Size = UDim2.new(1, -70, 1, 0),
+        Position = UDim2.fromOffset(12, 0),
+        BackgroundTransparency = 1,
+        Text = text,
+        TextColor3 = Color3.new(1, 1, 1),
+        Font = Enum.Font.Gotham,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row
+    })
+    
+    local switch = new("Frame", {
+        Size = UDim2.fromOffset(44, 22),
+        Position = UDim2.new(1, -56, 0.5, -11),
+        BackgroundColor3 = default and Color3.fromRGB(130, 90, 255) or Color3.fromRGB(60, 60, 70),
+        Parent = row
+    })
+    corner(switch, 11)
+    
+    local knob = new("Frame", {
+        Size = UDim2.fromOffset(18, 18),
+        Position = default and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        Parent = switch
+    })
+    corner(knob, 9)
+    
+    local btn = new("TextButton", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        Parent = row
+    })
+    
+    local state = default
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        switch.BackgroundColor3 = state and Color3.fromRGB(130, 90, 255) or Color3.fromRGB(60, 60, 70)
+        knob.Position = state and UDim2.fromOffset(24, 2) or UDim2.fromOffset(2, 2)
+        if callback then callback(state) end
+    end)
+end
+
+-- Toggle Auto Farm
+createToggle("Bật Auto Farm (Ngoài Lobby)", false, function(v)
+    Features.AutoFarm = v
+    if v then startFarm() else Running.farm = false end
+end)
+
+-- Toggle Fly
+createToggle("Bật Fly (Bay lượn)", false, function(v)
+    Features.Fly = v
+    updateFly()
+end)
+
+-- Nút Auto Select
+local selectBtn = new("TextButton", {
+    Size = UDim2.new(1, -20, 0, 38),
+    Position = UDim2.new(0, 10, 0, yPos),
+    BackgroundColor3 = Color3.fromRGB(35, 35, 45),
+    Text = "Auto Select (Bấm nút V)",
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 13,
+    Parent = Main
+})
+corner(selectBtn, 8)
+yPos = yPos + 46
+
+selectBtn.MouseButton1Click:Connect(function()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        for _, v in ipairs(pg:GetDescendants()) do
+            if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                local txt = v:IsA("TextButton") and v.Text or ""
+                if txt:lower():find("select") or txt == "V" then
+                    local pos = v.AbsolutePosition + (v.AbsoluteSize / 2)
+                    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+                    break
+                end
+            end
+        end
+    end
+end)
+
+setMenu(true)
