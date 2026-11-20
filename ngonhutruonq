@@ -503,8 +503,8 @@ setMenu(State.MenuOpen)
 
 local mainPage = createTab("Main")
 
-createSection(mainPage, "Cài đặt Auto Farm")
-createToggle(mainPage, "Bật Auto Farm (Thần tốc)", false, function(v)
+createSection(mainPage, "Auto Farm")
+createToggle(mainPage, " Auto Farm ", false, function(v)
     if v then
         State.AutoFarm = true
         startFarm()
