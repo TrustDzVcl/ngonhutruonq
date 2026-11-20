@@ -6,6 +6,7 @@ local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -13,19 +14,17 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local State = {
     AutoFarm = false,
     SelectedMap = nil,
-    Distance = 4,
-    AttackDelay = 0.05,
-    SpamSkill = true,
-    SkillDelay = 0.1,
+    Distance = 7.5,
     MenuOpen = true,
+    SpamSkill = true,
 }
 
 local Connections = {}
-local Running = {}
 local Pages = {}
 local ScreenGui
 local MAP_FOLDER_NAMES = {"Maps", "Map", "Worlds", "World", "Stages", "Areas"}
 local ALL_LABEL = "Tất cả"
+local SkillKeys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four}
 
 local C = {
     Bg = Color3.fromRGB(18, 16, 28),
@@ -38,15 +37,8 @@ local C = {
 }
 
 local order = 0
-local function nextOrder()
-    order += 1
-    return order
-end
-
-local function track(conn)
-    table.insert(Connections, conn)
-    return conn
-end
+local function nextOrder() order += 1 return order end
+local function track(conn) table.insert(Connections, conn) return conn end
 
 local function new(class, props)
     local inst = Instance.new(class)
@@ -65,23 +57,17 @@ end
 
 local function protectGui(gui)
     local ok = false
-    if gethui then
-        ok = pcall(function() gui.Parent = gethui() end)
-    end
+    if gethui then ok = pcall(function() gui.Parent = gethui() end) end
     if not ok or not gui.Parent then
         ok = pcall(function() gui.Parent = CoreGui end)
-        if not ok or not gui.Parent then
-            gui.Parent = PlayerGui
-        end
+        if not ok or not gui.Parent then gui.Parent = PlayerGui end
     end
 end
 
 local function getMapFolder()
     for _, name in ipairs(MAP_FOLDER_NAMES) do
         local folder = workspace:FindFirstChild(name)
-        if folder and #folder:GetChildren() > 0 then
-            return folder
-        end
+        if folder and #folder:GetChildren() > 0 then return folder end
     end
     return nil
 end
@@ -103,97 +89,75 @@ local function refreshMaps()
     return list
 end
 
+local _targetRoot = nil
+local _targetRefreshTime = 0
+local TARGET_REFRESH = 0.15
+
 local function getSearchRoot()
-    if not State.SelectedMap then
-        return workspace
-    end
+    if not State.SelectedMap then return workspace end
     local folder = getMapFolder()
     return folder and folder:FindFirstChild(State.SelectedMap) or nil
 end
 
-local _targetCache = nil
-local _targetCacheTime = 0
-local TARGET_CACHE_DURATION = 0.2
-
-local function findTarget(hrp)
-    local now = tick()
-    if _targetCache and _targetCache.Parent and (now - _targetCacheTime) < TARGET_CACHE_DURATION then
-        local root = _targetCache:FindFirstChild("HumanoidRootPart")
-        if root then
-            return root
-        end
-    end
+local function findClosestEnemy()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
 
     local searchRoot = getSearchRoot()
     if not searchRoot then return nil end
 
-    local localChar = LocalPlayer.Character
-    local best, bestDist = nil, math.huge
-    local hrpPos = hrp.Position
+    local closest, shortest = nil, math.huge
+    local rootPos = root.Position
 
-    local children = searchRoot:GetChildren()
-    for i = 1, #children do
-        local model = children[i]
-        if model:IsA("Model") and model ~= localChar 
-           and not Players:GetPlayerFromCharacter(model) then
-            local hum = model:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local root = model:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local dx = root.Position.X - hrpPos.X
-                    local dy = root.Position.Y - hrpPos.Y
-                    local dz = root.Position.Z - hrpPos.Z
-                    local d = dx*dx + dy*dy + dz*dz
-                    if d < bestDist then
-                        best, bestDist = root, d
-                    end
+    for _, obj in ipairs(searchRoot:GetChildren()) do
+        if obj:IsA("Model") and obj ~= char then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+            if hum and hum.Health > 0 and enemyRoot 
+               and not Players:GetPlayerFromCharacter(obj) then
+                local dx = rootPos.X - enemyRoot.Position.X
+                local dy = rootPos.Y - enemyRoot.Position.Y
+                local dz = rootPos.Z - enemyRoot.Position.Z
+                local d = dx*dx + dy*dy + dz*dz
+                if d < shortest and d < 160000 then
+                    shortest = d
+                    closest = enemyRoot
                 end
             end
         end
     end
 
-    if not best then
+    if not closest then
         local desc = searchRoot:GetDescendants()
         for i = 1, #desc do
             local obj = desc[i]
-            if obj:IsA("Humanoid") and obj.Health > 0 then
-                local model = obj.Parent
-                if model and model:IsA("Model")
-                    and model ~= localChar
-                    and not Players:GetPlayerFromCharacter(model) then
-                    local root = model:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        local dx = root.Position.X - hrpPos.X
-                        local dy = root.Position.Y - hrpPos.Y
-                        local dz = root.Position.Z - hrpPos.Z
-                        local d = dx*dx + dy*dy + dz*dz
-                        if d < bestDist then
-                            best, bestDist = root, d
-                        end
+            if obj:IsA("Model") and obj ~= char then
+                local hum = obj:FindFirstChildOfClass("Humanoid")
+                local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+                if hum and hum.Health > 0 and enemyRoot 
+                   and not Players:GetPlayerFromCharacter(obj) then
+                    local dx = rootPos.X - enemyRoot.Position.X
+                    local dy = rootPos.Y - enemyRoot.Position.Y
+                    local dz = rootPos.Z - enemyRoot.Position.Z
+                    local d = dx*dx + dy*dy + dz*dz
+                    if d < shortest and d < 160000 then
+                        shortest = d
+                        closest = enemyRoot
                     end
                 end
             end
         end
     end
 
-    if best then
-        _targetCache = best.Parent
-        _targetCacheTime = now
-    end
-
-    return best
+    return closest
 end
 
 local _equippedTool = nil
 local function ensureTool(char, hum)
     local tool = char:FindFirstChildOfClass("Tool")
-    if tool then
-        _equippedTool = tool
-        return tool
-    end
-    if _equippedTool and _equippedTool.Parent then
-        return _equippedTool
-    end
+    if tool then _equippedTool = tool return tool end
+    if _equippedTool and _equippedTool.Parent then return _equippedTool end
     local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
     tool = backpack and backpack:FindFirstChildOfClass("Tool")
     if tool then
@@ -203,91 +167,73 @@ local function ensureTool(char, hum)
     return tool
 end
 
-local _lastCFrame = nil
-local function smoothTeleport(hrp, targetPos, dist)
-    local desired = CFrame.lookAt(targetPos + Vector3.new(0, dist, 0), targetPos)
-    if _lastCFrame and (_lastCFrame.Position - desired.Position).Magnitude < 0.1 then
-        return
-    end
-    _lastCFrame = desired
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.CFrame = desired
+local function pressKey(key)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, key, false, game)
+        task.wait(0.03)
+        VirtualInputManager:SendKeyEvent(false, key, false, game)
+    end)
 end
 
-local function spamSkills(char)
-    if not State.SpamSkill then return end
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-
-    local tool = char:FindFirstChildOfClass("Tool")
-    if tool then
-        pcall(function() tool:Activate() end)
-    end
-
-    local skills = char:FindFirstChild("Skills")
-    if skills then
-        for _, skill in ipairs(skills:GetChildren()) do
-            if skill:IsA("RemoteEvent") or skill:IsA("RemoteFunction") then
-                pcall(function()
-                    if skill:IsA("RemoteEvent") then
-                        skill:FireServer()
-                    else
-                        skill:InvokeServer()
-                    end
-                end)
-            end
-        end
-    end
-
-    for _, v in ipairs(char:GetChildren()) do
-        if v:IsA("RemoteEvent") then
-            pcall(function() v:FireServer() end)
-        end
-    end
-end
+local farmConn = nil
 
 local function startFarm()
-    if Running.farm then return end
-    Running.farm = true
+    if farmConn then farmConn:Disconnect() end
 
-    task.spawn(function()
-        local skillAccum = 0
-        while State.AutoFarm and Running.farm do
-            local dt = RunService.Heartbeat:Wait()
+    local skillAccum = 0
+    local lastSkillTime = 0
 
-            local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    farmConn = RunService.Heartbeat:Connect(function(dt)
+        if not State.AutoFarm then return end
 
-            if hum and hrp and hum.Health > 0 then
-                local targetRoot = findTarget(hrp)
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not (hum and root and hum.Health > 0) then return end
 
-                if targetRoot and targetRoot.Parent then
-                    local tool = ensureTool(char, hum)
-                    smoothTeleport(hrp, targetRoot.Position, State.Distance)
+        local now = tick()
+        if now - _targetRefreshTime > TARGET_REFRESH then
+            _targetRoot = findClosestEnemy()
+            _targetRefreshTime = now
+        end
 
-                    if tool then
-                        pcall(function() tool:Activate() end)
-                    end
+        local target = _targetRoot
+        if target and target.Parent then
+            root.AssemblyLinearVelocity = Vector3.zero
+            local targetPos = target.Position + Vector3.new(0, State.Distance, 0)
+            root.CFrame = CFrame.new(targetPos, target.Position)
 
-                    if State.SpamSkill then
-                        skillAccum += dt
-                        if skillAccum >= State.SkillDelay then
-                            skillAccum = 0
-                            spamSkills(char)
-                        end
-                    end
-                end
+            local tool = ensureTool(char, hum)
+            if tool then
+                pcall(function() tool:Activate() end)
             end
 
-            task.wait(State.AttackDelay)
+            if State.SpamSkill then
+                skillAccum += dt
+                if skillAccum >= 0.25 then
+                    skillAccum = 0
+                    task.spawn(function()
+                        for _, key in ipairs(SkillKeys) do
+                            if not State.AutoFarm then break end
+                            pressKey(key)
+                            task.wait(0.05)
+                        end
+                    end)
+                    lastSkillTime = now
+                end
+            end
         end
-        Running.farm = false
-        _equippedTool = nil
-        _targetCache = nil
-        _lastCFrame = nil
     end)
+    track(farmConn)
+end
+
+local function stopFarm()
+    if farmConn then
+        farmConn:Disconnect()
+        farmConn = nil
+    end
+    _targetRoot = nil
+    _equippedTool = nil
 end
 
 local function makeDraggable(handle, target, onClick)
@@ -304,9 +250,7 @@ local function makeDraggable(handle, target, onClick)
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
                     if endedConn then endedConn:Disconnect() end
-                    if not moved and onClick then
-                        task.spawn(onClick)
-                    end
+                    if not moved and onClick then task.spawn(onClick) end
                 end
             end)
         end
@@ -402,25 +346,6 @@ local function createToggle(parent, text, default, callback)
     return set
 end
 
-local function createButton(parent, text, callback)
-    local btn = new("TextButton", {
-        Size = UDim2.new(1, 0, 0, 36),
-        BackgroundColor3 = C.Panel,
-        Text = text,
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 13,
-        BorderSizePixel = 0,
-        LayoutOrder = nextOrder(),
-        Parent = parent,
-    })
-    corner(btn, 8)
-    track(btn.MouseButton1Click:Connect(function()
-        if callback then task.spawn(callback) end
-    end))
-    return btn
-end
-
 local function createStepper(parent, text, default, min, max, step, callback)
     local value = default
     step = step or 1
@@ -439,34 +364,20 @@ local function createStepper(parent, text, default, min, max, step, callback)
     local minus = new("TextButton", {
         Size = UDim2.fromOffset(28, 26),
         Position = UDim2.new(1, -100, 0.5, -13),
-        BackgroundColor3 = C.Off,
-        Text = "-",
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        BorderSizePixel = 0,
-        Parent = row,
+        BackgroundColor3 = C.Off, Text = "-", TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold, TextSize = 16, BorderSizePixel = 0, Parent = row,
     })
     local valueLbl = new("TextLabel", {
         Size = UDim2.fromOffset(36, 26),
         Position = UDim2.new(1, -68, 0.5, -13),
-        BackgroundTransparency = 1,
-        Text = tostring(value),
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 13,
-        Parent = row,
+        BackgroundTransparency = 1, Text = tostring(value),
+        TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 13, Parent = row,
     })
     local plus = new("TextButton", {
         Size = UDim2.fromOffset(28, 26),
         Position = UDim2.new(1, -30, 0.5, -13),
-        BackgroundColor3 = C.Off,
-        Text = "+",
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        BorderSizePixel = 0,
-        Parent = row,
+        BackgroundColor3 = C.Off, Text = "+", TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold, TextSize = 16, BorderSizePixel = 0, Parent = row,
     })
     corner(minus, 6)
     corner(plus, 6)
@@ -552,7 +463,7 @@ local function createDropdown(parent, text, getOptions, onSelect)
                 State.SelectedMap = value
                 current.Text = name
                 listFrame.Visible = false
-                _targetCache = nil
+                _targetRoot = nil
                 if onSelect then task.spawn(onSelect, value) end
             end))
         end
@@ -721,32 +632,22 @@ createToggle(mainPage, "Bật Auto Farm", false, function(v)
     if v then
         startFarm()
     else
-        Running.farm = false
+        stopFarm()
     end
 end)
 createDropdown(mainPage, "Chọn Map", refreshMaps, nil)
-createStepper(mainPage, "Khoảng cách trên đầu quái", State.Distance, 1, 15, 1, function(v)
+createStepper(mainPage, "Độ cao bay (HeightOffset)", State.Distance, 1, 20, 0.5, function(v)
     State.Distance = v
 end)
 
 createSection(mainPage, "Skill")
-createToggle(mainPage, "Spam Skill", true, function(v)
+createToggle(mainPage, "Spam Skill (1,2,3,4)", true, function(v)
     State.SpamSkill = v
-end)
-createStepper(mainPage, "Tốc độ Spam Skill (giây)", State.SkillDelay, 0.05, 2, 0.05, function(v)
-    State.SkillDelay = v
-end)
-createStepper(mainPage, "Tốc độ đánh (giây)", State.AttackDelay, 0.02, 1, 0.01, function(v)
-    State.AttackDelay = v
 end)
 
 env.DarkwenCleanup = function()
     State.AutoFarm = false
-    State.SpamSkill = false
-    Running.farm = false
-    _equippedTool = nil
-    _targetCache = nil
-    _lastCFrame = nil
+    stopFarm()
     for _, conn in ipairs(Connections) do
         pcall(function() conn:Disconnect() end)
     end
