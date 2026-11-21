@@ -1,91 +1,230 @@
-_G.AutoFarm = false
-local HeightOffset = 7.5
+--// Darkwen | Anime CardVerse | Auto Farm + Skill + Melee (fix dame)
+local env = (getgenv and getgenv()) or _G
+if env.DarkwenFarmCleanup then pcall(env.DarkwenFarmCleanup) end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = game:GetService("CoreGui")
+local CONFIG = {
+    HeightOffset = 7.5,
+    MaxRange = 400,
+    SkillKeys = {
+        Enum.KeyCode.One,
+        Enum.KeyCode.Two,
+        Enum.KeyCode.Three,
+        Enum.KeyCode.Four,
+        Enum.KeyCode.Five,
+    },
+    SkillInterval = 0.25,
+    KeyHold = 0.05,
+    PunchInterval = 0.45,
+    TargetRefresh = 0.1,
+}
 
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Parent = ScreenGui
-ToggleBtn.Size = UDim2.new(0, 140, 0, 35)
-ToggleBtn.Position = UDim2.new(0.5, -70, 0, 10)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "AutoFram: OFF"
-ToggleBtn.Font = Enum.Font.SourceSansBold
-ToggleBtn.TextSize = 15
+local State = {
+    AutoFarm = false,
+    Skills = true,
+    Melee = true,
+}
 
-ToggleBtn.MouseButton1Click:Connect(function()
-    _G.AutoFarm = not _G.AutoFarm
-    if _G.AutoFarm then
-        ToggleBtn.Text = "AutoFram: ON"
-        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    else
-        ToggleBtn.Text = "AutoFram: OFF"
-        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    end
+local Connections = {}
+local alive = true
+local currentTarget = nil
+
+local function track(conn)
+    table.insert(Connections, conn)
+    return conn
+end
+
+--// Load game modules (RemoteBank dùng cho đánh thường, MouseUtil dùng để sửa vị trí skill)
+local RemoteBank, MouseUtil
+pcall(function()
+    RemoteBank = require(ReplicatedStorage:WaitForChild("RemoteBank", 10))
+end)
+pcall(function()
+    local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
+    MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
 end)
 
-local function GetClosestEnemy()
-    local closestEnemy = nil
-    local shortestDistance = math.huge
+--// Hook GetTarget: khi auto farm bật, skill sẽ nhắm vào vị trí quái thay vì chuột
+local originalGetTarget
+if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
+    originalGetTarget = MouseUtil.GetTarget
+    MouseUtil.GetTarget = function(...)
+        if State.AutoFarm and currentTarget and currentTarget.Parent then
+            return currentTarget.Position
+        end
+        return originalGetTarget(...)
+    end
+end
+
+--// Tìm quái gần nhất
+local function getClosestEnemy()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    
-    if not root then return nil end
+    if not root then
+        return nil
+    end
 
+    local best, bestDist = nil, CONFIG.MaxRange
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= char then
+        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
-            local enemyRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            
-            if hum and hum.Health > 0 and enemyRoot and not Players:GetPlayerFromCharacter(obj) then
-                local distance = (root.Position - enemyRoot.Position).Magnitude
-                if distance < shortestDistance and distance < 400 then
-                    shortestDistance = distance
-                    closestEnemy = enemyRoot
+            local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+            if hum and hum.Health > 0 and eRoot then
+                local d = (root.Position - eRoot.Position).Magnitude
+                if d < bestDist then
+                    best, bestDist = eRoot, d
                 end
             end
         end
     end
-    return closestEnemy
+    return best
 end
 
-RunService.Heartbeat:Connect(function()
-    if not _G.AutoFarm then return end
-    
+--// Cập nhật mục tiêu định kỳ (không quét mỗi frame)
+task.spawn(function()
+    while alive do
+        if State.AutoFarm then
+            currentTarget = getClosestEnemy()
+        else
+            currentTarget = nil
+        end
+        task.wait(CONFIG.TargetRefresh)
+    end
+end)
+
+--// Di chuyển lên đầu quái
+track(RunService.Heartbeat:Connect(function()
+    if not (alive and State.AutoFarm) then
+        return
+    end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    local target = GetClosestEnemy()
-
-    if root and target then
-        root.Velocity = Vector3.new(0, 0, 0)
-        local targetPos = target.Position + Vector3.new(0, HeightOffset, 0)
-        root.CFrame = CFrame.new(targetPos, target.Position)
+    local target = currentTarget
+    if root and target and target.Parent then
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.CFrame = CFrame.new(
+            target.Position + Vector3.new(0, CONFIG.HeightOffset, 0),
+            target.Position
+        )
     end
-end)
+end))
 
-local SkillKeys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Five}
-
+--// Bấm skill 1-5 (game tự gửi CastPower với vị trí đã hook)
 task.spawn(function()
-    while task.wait(0.25) do
-        if _G.AutoFarm and GetClosestEnemy() then
-            for _, key in ipairs(SkillKeys) do
-                if not _G.AutoFarm then break end
+    while alive do
+        if State.AutoFarm and State.Skills and currentTarget and currentTarget.Parent then
+            for _, key in ipairs(CONFIG.SkillKeys) do
+                if not (alive and State.AutoFarm and State.Skills) then
+                    break
+                end
                 VirtualInputManager:SendKeyEvent(true, key, false, game)
-                task.wait(0.05)
+                task.wait(CONFIG.KeyHold)
                 VirtualInputManager:SendKeyEvent(false, key, false, game)
-            end
-            
-            local char = LocalPlayer.Character
-            local tool = char and char:FindFirstChildOfClass("Tool")
-            if tool then
-                tool:Activate()
+                task.wait(0.05)
             end
         end
+        task.wait(CONFIG.SkillInterval)
     end
 end)
+
+--// Đánh thường bằng PunchRemote (đúng remote game dùng)
+task.spawn(function()
+    while alive do
+        if State.AutoFarm and State.Melee and currentTarget and currentTarget.Parent
+            and RemoteBank and RemoteBank.PunchRemote then
+            pcall(function()
+                RemoteBank.PunchRemote:Fire()
+            end)
+        end
+        task.wait(CONFIG.PunchInterval)
+    end
+end)
+
+--// GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "DarkwenFarm"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999
+local guiOk = false
+if gethui then
+    guiOk = pcall(function()
+        gui.Parent = gethui()
+    end)
+end
+if not guiOk or not gui.Parent then
+    local ok = pcall(function()
+        gui.Parent = CoreGui
+    end)
+    if not ok or not gui.Parent then
+        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+end
+
+local function makeToggle(name, y, default, onChange)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.fromOffset(160, 36)
+    btn.Position = UDim2.new(0.5, -80, 0, y)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 16
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = gui
+
+    local value = default
+    local function render()
+        btn.Text = name .. ": " .. (value and "ON" or "OFF")
+        btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    end
+    render()
+
+    track(btn.MouseButton1Click:Connect(function()
+        value = not value
+        render()
+        onChange(value)
+    end))
+    return btn
+end
+
+makeToggle("AutoFarm", 10, false, function(v)
+    State.AutoFarm = v
+end)
+makeToggle("Skill", 54, true, function(v)
+    State.Skills = v
+end)
+makeToggle("Đánh thường", 98, true, function(v)
+    State.Melee = v
+end)
+
+if not originalGetTarget then
+    warn("[Darkwen] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
+end
+if not (RemoteBank and RemoteBank.PunchRemote) then
+    warn("[Darkwen] Không tải được RemoteBank, đánh thường sẽ không chạy.")
+end
+
+--// Cleanup
+env.DarkwenFarmCleanup = function()
+    alive = false
+    State.AutoFarm = false
+    if originalGetTarget and type(MouseUtil) == "table" then
+        MouseUtil.GetTarget = originalGetTarget
+    end
+    for _, conn in ipairs(Connections) do
+        pcall(function()
+            conn:Disconnect()
+        end)
+    end
+    table.clear(Connections)
+    if gui then
+        gui:Destroy()
+    end
+    env.DarkwenFarmCleanup = nil
+end
