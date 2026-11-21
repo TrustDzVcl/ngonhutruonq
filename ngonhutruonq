@@ -4,10 +4,14 @@ if env.TrustPremiumCleanup then pcall(env.TrustPremiumCleanup) end
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local CoreGui = game:GetService("CoreGui")
 local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
+
+local CoreGui
+pcall(function() CoreGui = game:GetService("CoreGui") end)
+
+local VirtualInputManager
+pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
 
 local CONFIG = {
     HeightOffset = 7.5,
@@ -34,6 +38,56 @@ local function track(conn)
     table.insert(Connections, conn)
     return conn
 end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "TrustPremium"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999
+
+local parented = false
+if gethui then
+    parented = pcall(function() gui.Parent = gethui() end)
+end
+if not parented and CoreGui then
+    parented = pcall(function() gui.Parent = CoreGui end)
+end
+if not parented then
+    pcall(function() gui.Parent = LocalPlayer:WaitForChild("PlayerGui", 5) end)
+end
+
+local function makeToggle(name, y, default, onChange)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.fromOffset(160, 36)
+    btn.Position = UDim2.new(0.5, -80, 0, y)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 16
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = gui
+
+    local value = default
+    local function render()
+        btn.Text = name .. ": " .. (value and "ON" or "OFF")
+        btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    end
+    render()
+
+    track(btn.MouseButton1Click:Connect(function()
+        value = not value
+        render()
+        onChange(value)
+    end))
+    return btn
+end
+
+makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
+makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
+makeToggle("Boost FPS", 98, true, function(v)
+    State.BoostFPS = v
+    if v then applyBoostFPS() end
+end)
 
 local function cleanEffect(obj)
     if not State.BoostFPS then return end
@@ -78,11 +132,13 @@ local function pressSkill(key)
     pcall(function()
         if keypress then keypress(key) end
     end)
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true, key, false, game)
-        task.wait(CONFIG.KeyHold)
-        VirtualInputManager:SendKeyEvent(false, key, false, game)
-    end)
+    if VirtualInputManager then
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, key, false, game)
+            task.wait(CONFIG.KeyHold)
+            VirtualInputManager:SendKeyEvent(false, key, false, game)
+        end)
+    end
 end
 
 local MouseUtil
@@ -116,9 +172,7 @@ local function getClosestEnemy()
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
             if hum and hum.Health > 0 and eRoot then
                 local d = (root.Position - eRoot.Position).Magnitude
-                if d < bestDist then
-                    best, bestDist = eRoot, d
-                end
+                if d < bestDist then best, bestDist = eRoot, d end
             end
         elseif obj:IsA("Folder") then
             for _, subObj in ipairs(obj:GetChildren()) do
@@ -127,9 +181,7 @@ local function getClosestEnemy()
                     local eRoot = subObj:FindFirstChild("HumanoidRootPart") or subObj:FindFirstChild("Torso")
                     if hum and hum.Health > 0 and eRoot then
                         local d = (root.Position - eRoot.Position).Magnitude
-                        if d < bestDist then
-                            best, bestDist = eRoot, d
-                        end
+                        if d < bestDist then best, bestDist = eRoot, d end
                     end
                 end
             end
@@ -177,53 +229,6 @@ task.spawn(function()
         end)
         task.wait(CONFIG.SkillInterval)
     end
-end)
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "TrustPremium"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999
-local guiOk = false
-if gethui then guiOk = pcall(function() gui.Parent = gethui() end) end
-if not guiOk or not gui.Parent then
-    local ok = pcall(function() gui.Parent = CoreGui end)
-    if not ok or not gui.Parent then
-        pcall(function() gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end)
-    end
-end
-
-local function makeToggle(name, y, default, onChange)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = UDim2.fromOffset(160, 36)
-    btn.Position = UDim2.new(0.5, -80, 0, y)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 16
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.Parent = gui
-
-    local value = default
-    local function render()
-        btn.Text = name .. ": " .. (value and "ON" or "OFF")
-        btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    end
-    render()
-
-    track(btn.MouseButton1Click:Connect(function()
-        value = not value
-        render()
-        onChange(value)
-    end))
-    return btn
-end
-
-makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
-makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
-makeToggle("Boost FPS", 98, true, function(v)
-    State.BoostFPS = v
-    if v then applyBoostFPS() end
 end)
 
 env.TrustPremiumCleanup = function()
