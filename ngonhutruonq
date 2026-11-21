@@ -12,15 +12,10 @@ local CONFIG = {
     HeightOffset = 3,
     MaxRange = 400,
     SkillKeys = {
-        Enum.KeyCode.One,
-        Enum.KeyCode.Two,
-        Enum.KeyCode.Three,
-        Enum.KeyCode.Four,
-        Enum.KeyCode.Five,
+        Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Five,
     },
-    SkillInterval = 0.25,
-    KeyHold = 0.05,
-    TargetRefresh = 0.1,
+    SkillInterval = 0.3,
+    TargetRefresh = 0.2,
     DodgeDistance = 30,
     DodgeHeight = 15
 }
@@ -34,12 +29,7 @@ local State = {
 
 local TargetModes = {"Tất cả", "Boss", "Alien Soldier", "Alien Officer", "Alien Scout", "Frieza", "Captain Shinyu"}
 local currentModeIndex = 1
-
 local NPC_BLACKLIST = {"menu", "npc", "shop", "quest", "seller", "trainer", "dummy", "spawn"}
-local NPC_FOLDER_KEYWORDS = {"npc", "shop", "quest", "menu"}
-local DANGER_KEYWORDS = {"hitbox", "warning", "aoe", "telegraph", "red", "impact"}
-local ANIM_KEYWORDS = {"attack", "cast", "skill", "punch", "kick"}
-
 local Connections = {}
 local alive = true
 local currentTarget = nil
@@ -50,25 +40,31 @@ local function track(conn)
     return conn
 end
 
+-- Hàm bấm phím hỗ trợ cả PC và Mobile (Giả lập)
+local function pressSkill(key)
+    if keypress then
+        pcall(keypress, 0.05) -- Dành cho executor Mobile
+    else
+        VirtualInputManager:SendKeyEvent(true, key, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, key, false, game)
+    end
+end
+
 local function isNPC(obj)
     local nameLower = string.lower(obj.Name)
     for _, black in ipairs(NPC_BLACKLIST) do
         if string.find(nameLower, black, 1, true) then return true end
-    end
-    local parent = obj.Parent
-    if parent and (parent:IsA("Folder") or parent:IsA("Model")) then
-        local pNameLower = string.lower(parent.Name)
-        for _, keyword in ipairs(NPC_FOLDER_KEYWORDS) do
-            if string.find(pNameLower, keyword, 1, true) then return true end
-        end
     end
     return false
 end
 
 local MouseUtil
 pcall(function()
-    local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
-    MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
+    local utils = ReplicatedStorage:FindFirstChild("Utilities")
+    if utils then
+        MouseUtil = require(utils:WaitForChild("MouseUtil", 5))
+    end
 end)
 
 local originalGetTarget
@@ -88,9 +84,8 @@ local function getClosestEnemy()
     if not root then return nil end
 
     local best, bestDist = nil, CONFIG.MaxRange
-    local searchFolder = workspace:FindFirstChild("Mob") or workspace
     
-    for _, obj in ipairs(searchFolder:GetDescendants()) do
+    for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
@@ -99,21 +94,14 @@ local function getClosestEnemy()
                 local baseName = obj.Name:gsub("_%d+$", "")
                 local isTargeted = false
                 
-                if State.TargetMode == "Tất cả" then
-                    isTargeted = true
+                if State.TargetMode == "Tất cả" then isTargeted = true
                 elseif State.TargetMode == "Boss" then
-                    if baseName == "Frieza" or baseName == "Captain Shinyu" then
-                        isTargeted = true
-                    end
-                elseif baseName == State.TargetMode then
-                    isTargeted = true
-                end
+                    if baseName == "Frieza" or baseName == "Captain Shinyu" then isTargeted = true end
+                elseif baseName == State.TargetMode then isTargeted = true end
 
                 if isTargeted then
                     local d = (root.Position - eRoot.Position).Magnitude
-                    if d < bestDist then
-                        best, bestDist = eRoot, d
-                    end
+                    if d < bestDist then best, bestDist = eRoot, d end
                 end
             end
         end
@@ -121,6 +109,7 @@ local function getClosestEnemy()
     return best
 end
 
+-- Vòng lặp tìm quái
 task.spawn(function()
     while alive do
         if State.AutoFarm then
@@ -132,43 +121,23 @@ task.spawn(function()
     end
 end)
 
+-- Vòng lặp Né Chiêu (Đã fix lỗi quét nhầm địa hình)
 task.spawn(function()
     while alive do
         if State.AutoFarm and State.Dodge and not isDodging and currentTarget and currentTarget.Parent then
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
             
-            if root and hum and hum.Health > 0 then
+            if root then
                 local dangerDetected = false
                 
+                -- Chỉ quét Hitbox nếu nó nằm trong 25 studs
                 local partsAround = workspace:GetPartBoundsInRadius(root.Position, 25)
                 for _, part in ipairs(partsAround) do
                     local pName = string.lower(part.Name)
-                    for _, kw in ipairs(DANGER_KEYWORDS) do
-                        if string.find(pName, kw, 1, true) then
-                            dangerDetected = true
-                            break
-                        end
-                    end
-                    if dangerDetected then break end
-                end
-
-                if not dangerDetected then
-                    local targetHum = currentTarget.Parent and currentTarget.Parent:FindFirstChildOfClass("Humanoid")
-                    local animator = targetHum and targetHum:FindFirstChildOfClass("Animator")
-                    if animator then
-                        local tracks = animator:GetPlayingAnimationTracks()
-                        for _, track in ipairs(tracks) do
-                            local animName = string.lower(track.Animation.Name)
-                            for _, kw in ipairs(ANIM_KEYWORDS) do
-                                if string.find(animName, kw, 1, true) then
-                                    dangerDetected = true
-                                    break
-                                end
-                            end
-                            if dangerDetected then break end
-                        end
+                    if string.find(pName, "hitbox") or string.find(pName, "warning") then
+                        dangerDetected = true
+                        break
                     end
                 end
 
@@ -176,11 +145,9 @@ task.spawn(function()
                     isDodging = true
                     local direction = (root.Position - currentTarget.Position).Unit
                     local dodgePos = root.Position + (direction * CONFIG.DodgeDistance) + Vector3.new(0, CONFIG.DodgeHeight, 0)
-                    
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.CFrame = CFrame.new(dodgePos, currentTarget.Position)
-                    
-                    task.wait(0.6) 
+                    task.wait(0.5) 
                     isDodging = false
                 end
             end
@@ -189,6 +156,7 @@ task.spawn(function()
     end
 end)
 
+-- Vòng lặp dí quái (Heartbeat)
 track(RunService.Heartbeat:Connect(function()
     if not (alive and State.AutoFarm) or isDodging then return end
     local char = LocalPlayer.Character
@@ -202,14 +170,13 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
+-- Vòng lặp bấm Skill
 task.spawn(function()
     while alive do
         if State.AutoFarm and State.AutoSkill and not isDodging and currentTarget and currentTarget.Parent then
             for _, key in ipairs(CONFIG.SkillKeys) do
                 if not (alive and State.AutoFarm and State.AutoSkill) or isDodging then break end
-                VirtualInputManager:SendKeyEvent(true, key, false, game)
-                task.wait(CONFIG.KeyHold)
-                VirtualInputManager:SendKeyEvent(false, key, false, game)
+                pressSkill(key)
                 task.wait(0.05)
             end
         end
@@ -217,6 +184,7 @@ task.spawn(function()
     end
 end)
 
+-- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "Trust"
 gui.ResetOnSpawn = false
@@ -225,14 +193,37 @@ local guiOk = false
 if gethui then guiOk = pcall(function() gui.Parent = gethui() end) end
 if not guiOk or not gui.Parent then
     local ok = pcall(function() gui.Parent = CoreGui end)
-    if not ok or not gui.Parent then
-        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    end
+    if not ok or not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 end
+
+-- Bảng Debug Trạng Thái
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.fromOffset(200, 20)
+statusLbl.Position = UDim2.new(0.5, -100, 0, 180)
+statusLbl.BackgroundTransparency = 1
+statusLbl.TextColor3 = Color3.fromRGB(255, 200, 50)
+statusLbl.Font = Enum.Font.SourceSansBold
+statusLbl.TextSize = 14
+statusLbl.Text = "Trạng thái: Chờ lệnh..."
+statusLbl.Parent = gui
+
+task.spawn(function()
+    while alive do
+        if not State.AutoFarm then
+            statusLbl.Text = "Trạng thái: Đang tắt AutoFarm"
+        elseif isDodging then
+            statusLbl.Text = "Trạng thái: ĐANG NÉ CHIÊU..."
+        elseif not currentTarget then
+            statusLbl.Text = "Trạng thái: Không tìm thấy quái!"
+        else
+            statusLbl.Text = "Trạng thái: Đang đánh " .. currentTarget.Parent.Name
+        end
+        task.wait(0.2)
+    end
+end)
 
 local function makeToggle(name, y, default, onChange)
     local btn = Instance.new("TextButton")
-    btn.Name = name
     btn.Size = UDim2.fromOffset(160, 36)
     btn.Position = UDim2.new(0.5, -80, 0, y)
     btn.Font = Enum.Font.SourceSansBold
@@ -241,18 +232,14 @@ local function makeToggle(name, y, default, onChange)
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
     btn.Parent = gui
-
     local value = default
     local function render()
         btn.Text = name .. ": " .. (value and "ON" or "OFF")
         btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
     end
     render()
-
     track(btn.MouseButton1Click:Connect(function()
-        value = not value
-        render()
-        onChange(value)
+        value = not value; render(); onChange(value)
     end))
     return btn
 end
@@ -264,7 +251,7 @@ local function makeButton(text, y, color, onClick)
     btn.Font = Enum.Font.SourceSansBold
     btn.TextSize = 14
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.BackgroundColor3 = color or Color3.fromRGB(50, 150, 200)
+    btn.BackgroundColor3 = color
     btn.BorderSizePixel = 0
     btn.Text = text
     btn.Parent = gui
@@ -276,26 +263,17 @@ makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
 makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
 makeToggle("Né chiêu", 98, true, function(v) State.Dodge = v end)
 
-local targetBtn = makeButton("Mục tiêu: " .. State.TargetMode, 142, Color3.fromRGB(150, 50, 200), function()
+makeButton("Mục tiêu: " .. State.TargetMode, 142, Color3.fromRGB(150, 50, 200), function()
     currentModeIndex = currentModeIndex + 1
     if currentModeIndex > #TargetModes then currentModeIndex = 1 end
     State.TargetMode = TargetModes[currentModeIndex]
-    targetBtn.Text = "Mục tiêu: " .. State.TargetMode
-end)
-
-if not originalGetTarget then
-    warn("[Trust] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
-end
+    getgenv().TrustGUI_TargetBtn.Text = "Mục tiêu: " .. State.TargetMode
+end).Name = "TrustGUI_TargetBtn"
 
 env.TrustCleanup = function()
-    alive = false
-    State.AutoFarm = false
-    if originalGetTarget and type(MouseUtil) == "table" then
-        MouseUtil.GetTarget = originalGetTarget
-    end
-    for _, conn in ipairs(Connections) do
-        pcall(function() conn:Disconnect() end)
-    end
+    alive = false; State.AutoFarm = false
+    if originalGetTarget and type(MouseUtil) == "table" then MouseUtil.GetTarget = originalGetTarget end
+    for _, conn in ipairs(Connections) do pcall(function() conn:Disconnect() end) end
     table.clear(Connections)
     if gui then gui:Destroy() end
     env.TrustCleanup = nil
