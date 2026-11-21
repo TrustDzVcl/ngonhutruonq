@@ -11,24 +11,24 @@ local LocalPlayer = Players.LocalPlayer
 local CONFIG = {
     HeightOffset = 3,
     MaxRange = 400,
+    KillAuraRange = 60,
     SkillKeys = {
         Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Five,
     },
-    SkillInterval = 0.3,
-    TargetRefresh = 0.2,
-    DodgeRadius = 8,
-    DodgeSpeed = 4
+    SkillInterval = 0.2,
+    TargetRefresh = 0.1,
 }
 
 local State = {
     AutoFarm = false,
     AutoSkill = true,
-    Dodge = false,
+    KillAura = false,
 }
 
 local Connections = {}
 local alive = true
 local currentTarget = nil
+local auraTargets = {}
 
 local function track(conn)
     table.insert(Connections, conn)
@@ -38,7 +38,7 @@ end
 local function pressSkill(key)
     if keypress then
         pcall(keypress, 0.05)
-    else
+    elseif VirtualInputManager then
         VirtualInputManager:SendKeyEvent(true, key, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, key, false, game)
@@ -57,49 +57,62 @@ local originalGetTarget
 if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
     originalGetTarget = MouseUtil.GetTarget
     MouseUtil.GetTarget = function(...)
-        if State.AutoFarm and currentTarget and currentTarget.Parent then
+        if (State.AutoFarm or State.KillAura) and currentTarget and currentTarget.Parent then
             return currentTarget.Position
         end
         return originalGetTarget(...)
     end
 end
 
-local function getClosestEnemy()
+local function getAllEnemiesInRange(range)
+    local list = {}
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    local best, bestDist = nil, CONFIG.MaxRange
+    if not root then return list end
     
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            
             if hum and hum.Health > 0 and eRoot then
                 local d = (root.Position - eRoot.Position).Magnitude
-                if d < bestDist then 
-                    best, bestDist = eRoot, d 
+                if d <= range then
+                    table.insert(list, eRoot)
                 end
             end
         end
     end
-    return best
+    return list
 end
 
 task.spawn(function()
     while alive do
         if State.AutoFarm then
-            currentTarget = getClosestEnemy()
+            local list = getAllEnemiesInRange(CONFIG.MaxRange)
+            table.sort(list, function(a, b)
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if not root then return false end
+                return (root.Position - a.Position).Magnitude < (root.Position - b.Position).Magnitude
+            end)
+            currentTarget = list[1]
+        elseif State.KillAura then
+            auraTargets = getAllEnemiesInRange(CONFIG.KillAuraRange)
+            if #auraTargets > 0 then
+                currentTarget = auraTargets[1]
+            else
+                currentTarget = nil
+            end
         else
             currentTarget = nil
+            auraTargets = {}
         end
         task.wait(CONFIG.TargetRefresh)
     end
 end)
 
 track(RunService.Heartbeat:Connect(function()
-    if not (alive and State.AutoFarm) then return end
+    if not alive or not State.AutoFarm then return end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local target = currentTarget
@@ -107,27 +120,29 @@ track(RunService.Heartbeat:Connect(function()
     if root and target and target.Parent then
         root.AssemblyLinearVelocity = Vector3.zero
         local targetPos = target.Position
-        
-        if State.Dodge then
-            local time = tick()
-            local x = math.cos(time * CONFIG.DodgeSpeed) * CONFIG.DodgeRadius
-            local z = math.sin(time * CONFIG.DodgeSpeed) * CONFIG.DodgeRadius
-            local myPos = targetPos + Vector3.new(x, CONFIG.HeightOffset, z)
-            root.CFrame = CFrame.new(myPos, targetPos)
-        else
-            local myPos = targetPos + Vector3.new(0, CONFIG.HeightOffset, 0)
-            root.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, 2)
-        end
+        local myPos = targetPos + Vector3.new(0, CONFIG.HeightOffset, 0)
+        root.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, 2)
     end
 end))
 
 task.spawn(function()
     while alive do
-        if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
-            for _, key in ipairs(CONFIG.SkillKeys) do
-                if not (alive and State.AutoFarm and State.AutoSkill) then break end
-                pressSkill(key)
-                task.wait(0.05)
+        if State.AutoSkill then
+            if State.KillAura then
+                for _, t in ipairs(auraTargets) do
+                    if not (alive and State.KillAura and State.AutoSkill) then break end
+                    currentTarget = t
+                    for _, key in ipairs(CONFIG.SkillKeys) do
+                        pressSkill(key)
+                        task.wait(0.02)
+                    end
+                end
+            elseif State.AutoFarm and currentTarget and currentTarget.Parent then
+                for _, key in ipairs(CONFIG.SkillKeys) do
+                    if not (alive and State.AutoFarm and State.AutoSkill) then break end
+                    pressSkill(key)
+                    task.wait(0.02)
+                end
             end
         end
         task.wait(CONFIG.SkillInterval)
@@ -157,16 +172,14 @@ statusLbl.Parent = gui
 
 task.spawn(function()
     while alive do
-        if not State.AutoFarm then
-            statusLbl.Text = "Trạng thái: Đang tắt AutoFarm"
+        if not State.AutoFarm and not State.KillAura then
+            statusLbl.Text = "Trạng thái: Đang tắt"
+        elseif State.KillAura then
+            statusLbl.Text = "Kill Aura: Đang đánh " .. #auraTargets .. " quái"
         elseif not currentTarget then
             statusLbl.Text = "Trạng thái: Không tìm thấy quái!"
         else
-            if State.Dodge then
-                statusLbl.Text = "Trạng thái: Đang bay vòng né " .. currentTarget.Parent.Name
-            else
-                statusLbl.Text = "Trạng thái: Đang đánh " .. currentTarget.Parent.Name
-            end
+            statusLbl.Text = "AutoFarm: Đang đánh " .. currentTarget.Parent.Name
         end
         task.wait(0.2)
     end
@@ -196,10 +209,10 @@ end
 
 makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
 makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
-makeToggle("Né chiêu", 98, false, function(v) State.Dodge = v end)
+makeToggle("Kill Aura", 98, false, function(v) State.KillAura = v end)
 
 env.TrustCleanup = function()
-    alive = false; State.AutoFarm = false
+    alive = false; State.AutoFarm = false; State.KillAura = false
     if originalGetTarget and type(MouseUtil) == "table" then MouseUtil.GetTarget = originalGetTarget end
     for _, conn in ipairs(Connections) do pcall(function() conn:Disconnect() end) end
     table.clear(Connections)
