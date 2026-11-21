@@ -9,8 +9,8 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
-    HeightOffset = 7.5,
-    MaxRange = 500,
+    HeightOffset = 3,
+    MaxRange = 400,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -21,20 +21,48 @@ local CONFIG = {
     SkillInterval = 0.25,
     KeyHold = 0.05,
     TargetRefresh = 0.1,
+    DodgeDistance = 30,
+    DodgeHeight = 15
 }
 
 local State = {
     AutoFarm = false,
-    Skills = true,
+    AutoSkill = true,
+    Dodge = true,
+    TargetMode = "Tất cả",
 }
+
+local TargetModes = {"Tất cả", "Boss", "Alien Soldier", "Alien Officer", "Alien Scout", "Frieza", "Captain Shinyu"}
+local currentModeIndex = 1
+
+local NPC_BLACKLIST = {"menu", "npc", "shop", "quest", "seller", "trainer", "dummy", "spawn"}
+local NPC_FOLDER_KEYWORDS = {"npc", "shop", "quest", "menu"}
+local DANGER_KEYWORDS = {"hitbox", "warning", "aoe", "telegraph", "red", "impact"}
+local ANIM_KEYWORDS = {"attack", "cast", "skill", "punch", "kick"}
 
 local Connections = {}
 local alive = true
 local currentTarget = nil
+local isDodging = false
 
 local function track(conn)
     table.insert(Connections, conn)
     return conn
+end
+
+local function isNPC(obj)
+    local nameLower = string.lower(obj.Name)
+    for _, black in ipairs(NPC_BLACKLIST) do
+        if string.find(nameLower, black, 1, true) then return true end
+    end
+    local parent = obj.Parent
+    if parent and (parent:IsA("Folder") or parent:IsA("Model")) then
+        local pNameLower = string.lower(parent.Name)
+        for _, keyword in ipairs(NPC_FOLDER_KEYWORDS) do
+            if string.find(pNameLower, keyword, 1, true) then return true end
+        end
+    end
+    return false
 end
 
 local MouseUtil
@@ -57,19 +85,35 @@ end
 local function getClosestEnemy()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        return nil
-    end
+    if not root then return nil end
 
     local best, bestDist = nil, CONFIG.MaxRange
-    for _, obj in ipairs(workspace:GetDescendants()) do
+    local searchFolder = workspace:FindFirstChild("Mob") or workspace
+    
+    for _, obj in ipairs(searchFolder:GetDescendants()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            if hum and hum.Health > 0 and eRoot then
-                local d = (root.Position - eRoot.Position).Magnitude
-                if d < bestDist then
-                    best, bestDist = eRoot, d
+            
+            if hum and hum.Health > 0 and eRoot and not isNPC(obj) then
+                local baseName = obj.Name:gsub("_%d+$", "")
+                local isTargeted = false
+                
+                if State.TargetMode == "Tất cả" then
+                    isTargeted = true
+                elseif State.TargetMode == "Boss" then
+                    if baseName == "Frieza" or baseName == "Captain Shinyu" then
+                        isTargeted = true
+                    end
+                elseif baseName == State.TargetMode then
+                    isTargeted = true
+                end
+
+                if isTargeted then
+                    local d = (root.Position - eRoot.Position).Magnitude
+                    if d < bestDist then
+                        best, bestDist = eRoot, d
+                    end
                 end
             end
         end
@@ -88,29 +132,81 @@ task.spawn(function()
     end
 end)
 
-track(RunService.Heartbeat:Connect(function()
-    if not (alive and State.AutoFarm) then
-        return
+task.spawn(function()
+    while alive do
+        if State.AutoFarm and State.Dodge and not isDodging and currentTarget and currentTarget.Parent then
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            
+            if root and hum and hum.Health > 0 then
+                local dangerDetected = false
+                
+                local partsAround = workspace:GetPartBoundsInRadius(root.Position, 25)
+                for _, part in ipairs(partsAround) do
+                    local pName = string.lower(part.Name)
+                    for _, kw in ipairs(DANGER_KEYWORDS) do
+                        if string.find(pName, kw, 1, true) then
+                            dangerDetected = true
+                            break
+                        end
+                    end
+                    if dangerDetected then break end
+                end
+
+                if not dangerDetected then
+                    local targetHum = currentTarget.Parent and currentTarget.Parent:FindFirstChildOfClass("Humanoid")
+                    local animator = targetHum and targetHum:FindFirstChildOfClass("Animator")
+                    if animator then
+                        local tracks = animator:GetPlayingAnimationTracks()
+                        for _, track in ipairs(tracks) do
+                            local animName = string.lower(track.Animation.Name)
+                            for _, kw in ipairs(ANIM_KEYWORDS) do
+                                if string.find(animName, kw, 1, true) then
+                                    dangerDetected = true
+                                    break
+                                end
+                            end
+                            if dangerDetected then break end
+                        end
+                    end
+                end
+
+                if dangerDetected then
+                    isDodging = true
+                    local direction = (root.Position - currentTarget.Position).Unit
+                    local dodgePos = root.Position + (direction * CONFIG.DodgeDistance) + Vector3.new(0, CONFIG.DodgeHeight, 0)
+                    
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.CFrame = CFrame.new(dodgePos, currentTarget.Position)
+                    
+                    task.wait(0.6) 
+                    isDodging = false
+                end
+            end
+        end
+        task.wait(0.1)
     end
+end)
+
+track(RunService.Heartbeat:Connect(function()
+    if not (alive and State.AutoFarm) or isDodging then return end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local target = currentTarget
     if root and target and target.Parent then
         root.AssemblyLinearVelocity = Vector3.zero
-        root.CFrame = CFrame.new(
-            target.Position + Vector3.new(0, CONFIG.HeightOffset, 0),
-            target.Position
-        )
+        local targetPos = target.Position
+        local myPos = targetPos + Vector3.new(0, CONFIG.HeightOffset, 0)
+        root.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, 2)
     end
 end))
 
 task.spawn(function()
     while alive do
-        if State.AutoFarm and State.Skills and currentTarget and currentTarget.Parent then
+        if State.AutoFarm and State.AutoSkill and not isDodging and currentTarget and currentTarget.Parent then
             for _, key in ipairs(CONFIG.SkillKeys) do
-                if not (alive and State.AutoFarm and State.Skills) then
-                    break
-                end
+                if not (alive and State.AutoFarm and State.AutoSkill) or isDodging then break end
                 VirtualInputManager:SendKeyEvent(true, key, false, game)
                 task.wait(CONFIG.KeyHold)
                 VirtualInputManager:SendKeyEvent(false, key, false, game)
@@ -126,15 +222,9 @@ gui.Name = "Trust"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 local guiOk = false
-if gethui then
-    guiOk = pcall(function()
-        gui.Parent = gethui()
-    end)
-end
+if gethui then guiOk = pcall(function() gui.Parent = gethui() end) end
 if not guiOk or not gui.Parent then
-    local ok = pcall(function()
-        gui.Parent = CoreGui
-    end)
+    local ok = pcall(function() gui.Parent = CoreGui end)
     if not ok or not gui.Parent then
         gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
     end
@@ -167,15 +257,34 @@ local function makeToggle(name, y, default, onChange)
     return btn
 end
 
-makeToggle("AutoFarm", 10, false, function(v)
-    State.AutoFarm = v
-end)
-makeToggle("AutoSkill", 54, true, function(v)
-    State.Skills = v
+local function makeButton(text, y, color, onClick)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.fromOffset(160, 36)
+    btn.Position = UDim2.new(0.5, -80, 0, y)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BackgroundColor3 = color or Color3.fromRGB(50, 150, 200)
+    btn.BorderSizePixel = 0
+    btn.Text = text
+    btn.Parent = gui
+    track(btn.MouseButton1Click:Connect(onClick))
+    return btn
+end
+
+makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
+makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
+makeToggle("Né chiêu", 98, true, function(v) State.Dodge = v end)
+
+local targetBtn = makeButton("Mục tiêu: " .. State.TargetMode, 142, Color3.fromRGB(150, 50, 200), function()
+    currentModeIndex = currentModeIndex + 1
+    if currentModeIndex > #TargetModes then currentModeIndex = 1 end
+    State.TargetMode = TargetModes[currentModeIndex]
+    targetBtn.Text = "Mục tiêu: " .. State.TargetMode
 end)
 
 if not originalGetTarget then
-    warn("[Trust] MouseUtil.GetTarget, Skill có thể vẫn lệch vị trí.")
+    warn("[Trust] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
 end
 
 env.TrustCleanup = function()
@@ -185,13 +294,9 @@ env.TrustCleanup = function()
         MouseUtil.GetTarget = originalGetTarget
     end
     for _, conn in ipairs(Connections) do
-        pcall(function()
-            conn:Disconnect()
-        end)
+        pcall(function() conn:Disconnect() end)
     end
     table.clear(Connections)
-    if gui then
-        gui:Destroy()
-    end
+    if gui then gui:Destroy() end
     env.TrustCleanup = nil
 end
