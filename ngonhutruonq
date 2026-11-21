@@ -16,47 +16,33 @@ local CONFIG = {
     },
     SkillInterval = 0.3,
     TargetRefresh = 0.2,
-    DodgeDistance = 30,
-    DodgeHeight = 15
+    DodgeRadius = 8,
+    DodgeSpeed = 4
 }
 
 local State = {
     AutoFarm = false,
     AutoSkill = true,
-    Dodge = true,
-    TargetMode = "Tất cả",
+    Dodge = false,
 }
 
-local TargetModes = {"Tất cả", "Boss", "Alien Soldier", "Alien Officer", "Alien Scout", "Frieza", "Captain Shinyu"}
-local currentModeIndex = 1
-local NPC_BLACKLIST = {"menu", "npc", "shop", "quest", "seller", "trainer", "dummy", "spawn"}
 local Connections = {}
 local alive = true
 local currentTarget = nil
-local isDodging = false
 
 local function track(conn)
     table.insert(Connections, conn)
     return conn
 end
 
--- Hàm bấm phím hỗ trợ cả PC và Mobile (Giả lập)
 local function pressSkill(key)
     if keypress then
-        pcall(keypress, 0.05) -- Dành cho executor Mobile
+        pcall(keypress, 0.05)
     else
         VirtualInputManager:SendKeyEvent(true, key, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, key, false, game)
     end
-end
-
-local function isNPC(obj)
-    local nameLower = string.lower(obj.Name)
-    for _, black in ipairs(NPC_BLACKLIST) do
-        if string.find(nameLower, black, 1, true) then return true end
-    end
-    return false
 end
 
 local MouseUtil
@@ -90,18 +76,10 @@ local function getClosestEnemy()
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
             
-            if hum and hum.Health > 0 and eRoot and not isNPC(obj) then
-                local baseName = obj.Name:gsub("_%d+$", "")
-                local isTargeted = false
-                
-                if State.TargetMode == "Tất cả" then isTargeted = true
-                elseif State.TargetMode == "Boss" then
-                    if baseName == "Frieza" or baseName == "Captain Shinyu" then isTargeted = true end
-                elseif baseName == State.TargetMode then isTargeted = true end
-
-                if isTargeted then
-                    local d = (root.Position - eRoot.Position).Magnitude
-                    if d < bestDist then best, bestDist = eRoot, d end
+            if hum and hum.Health > 0 and eRoot then
+                local d = (root.Position - eRoot.Position).Magnitude
+                if d < bestDist then 
+                    best, bestDist = eRoot, d 
                 end
             end
         end
@@ -109,7 +87,6 @@ local function getClosestEnemy()
     return best
 end
 
--- Vòng lặp tìm quái
 task.spawn(function()
     while alive do
         if State.AutoFarm then
@@ -121,61 +98,34 @@ task.spawn(function()
     end
 end)
 
--- Vòng lặp Né Chiêu (Đã fix lỗi quét nhầm địa hình)
-task.spawn(function()
-    while alive do
-        if State.AutoFarm and State.Dodge and not isDodging and currentTarget and currentTarget.Parent then
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            
-            if root then
-                local dangerDetected = false
-                
-                -- Chỉ quét Hitbox nếu nó nằm trong 25 studs
-                local partsAround = workspace:GetPartBoundsInRadius(root.Position, 25)
-                for _, part in ipairs(partsAround) do
-                    local pName = string.lower(part.Name)
-                    if string.find(pName, "hitbox") or string.find(pName, "warning") then
-                        dangerDetected = true
-                        break
-                    end
-                end
-
-                if dangerDetected then
-                    isDodging = true
-                    local direction = (root.Position - currentTarget.Position).Unit
-                    local dodgePos = root.Position + (direction * CONFIG.DodgeDistance) + Vector3.new(0, CONFIG.DodgeHeight, 0)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.CFrame = CFrame.new(dodgePos, currentTarget.Position)
-                    task.wait(0.5) 
-                    isDodging = false
-                end
-            end
-        end
-        task.wait(0.1)
-    end
-end)
-
--- Vòng lặp dí quái (Heartbeat)
 track(RunService.Heartbeat:Connect(function()
-    if not (alive and State.AutoFarm) or isDodging then return end
+    if not (alive and State.AutoFarm) then return end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local target = currentTarget
+    
     if root and target and target.Parent then
         root.AssemblyLinearVelocity = Vector3.zero
         local targetPos = target.Position
-        local myPos = targetPos + Vector3.new(0, CONFIG.HeightOffset, 0)
-        root.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, 2)
+        
+        if State.Dodge then
+            local time = tick()
+            local x = math.cos(time * CONFIG.DodgeSpeed) * CONFIG.DodgeRadius
+            local z = math.sin(time * CONFIG.DodgeSpeed) * CONFIG.DodgeRadius
+            local myPos = targetPos + Vector3.new(x, CONFIG.HeightOffset, z)
+            root.CFrame = CFrame.new(myPos, targetPos)
+        else
+            local myPos = targetPos + Vector3.new(0, CONFIG.HeightOffset, 0)
+            root.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, 2)
+        end
     end
 end))
 
--- Vòng lặp bấm Skill
 task.spawn(function()
     while alive do
-        if State.AutoFarm and State.AutoSkill and not isDodging and currentTarget and currentTarget.Parent then
+        if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
             for _, key in ipairs(CONFIG.SkillKeys) do
-                if not (alive and State.AutoFarm and State.AutoSkill) or isDodging then break end
+                if not (alive and State.AutoFarm and State.AutoSkill) then break end
                 pressSkill(key)
                 task.wait(0.05)
             end
@@ -184,7 +134,6 @@ task.spawn(function()
     end
 end)
 
--- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "Trust"
 gui.ResetOnSpawn = false
@@ -196,10 +145,9 @@ if not guiOk or not gui.Parent then
     if not ok or not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 end
 
--- Bảng Debug Trạng Thái
 local statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.fromOffset(200, 20)
-statusLbl.Position = UDim2.new(0.5, -100, 0, 180)
+statusLbl.Position = UDim2.new(0.5, -100, 0, 142)
 statusLbl.BackgroundTransparency = 1
 statusLbl.TextColor3 = Color3.fromRGB(255, 200, 50)
 statusLbl.Font = Enum.Font.SourceSansBold
@@ -211,12 +159,14 @@ task.spawn(function()
     while alive do
         if not State.AutoFarm then
             statusLbl.Text = "Trạng thái: Đang tắt AutoFarm"
-        elseif isDodging then
-            statusLbl.Text = "Trạng thái: ĐANG NÉ CHIÊU..."
         elseif not currentTarget then
             statusLbl.Text = "Trạng thái: Không tìm thấy quái!"
         else
-            statusLbl.Text = "Trạng thái: Đang đánh " .. currentTarget.Parent.Name
+            if State.Dodge then
+                statusLbl.Text = "Trạng thái: Đang bay vòng né " .. currentTarget.Parent.Name
+            else
+                statusLbl.Text = "Trạng thái: Đang đánh " .. currentTarget.Parent.Name
+            end
         end
         task.wait(0.2)
     end
@@ -244,31 +194,9 @@ local function makeToggle(name, y, default, onChange)
     return btn
 end
 
-local function makeButton(text, y, color, onClick)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.fromOffset(160, 36)
-    btn.Position = UDim2.new(0.5, -80, 0, y)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.BackgroundColor3 = color
-    btn.BorderSizePixel = 0
-    btn.Text = text
-    btn.Parent = gui
-    track(btn.MouseButton1Click:Connect(onClick))
-    return btn
-end
-
 makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
 makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
-makeToggle("Né chiêu", 98, true, function(v) State.Dodge = v end)
-
-makeButton("Mục tiêu: " .. State.TargetMode, 142, Color3.fromRGB(150, 50, 200), function()
-    currentModeIndex = currentModeIndex + 1
-    if currentModeIndex > #TargetModes then currentModeIndex = 1 end
-    State.TargetMode = TargetModes[currentModeIndex]
-    getgenv().TrustGUI_TargetBtn.Text = "Mục tiêu: " .. State.TargetMode
-end).Name = "TrustGUI_TargetBtn"
+makeToggle("Né chiêu", 98, false, function(v) State.Dodge = v end)
 
 env.TrustCleanup = function()
     alive = false; State.AutoFarm = false
