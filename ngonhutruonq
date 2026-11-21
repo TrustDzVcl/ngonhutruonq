@@ -1,4 +1,3 @@
---// Darkwen | Anime CardVerse | Auto Farm + Skill + Melee (fix dame)
 local env = (getgenv and getgenv()) or _G
 if env.DarkwenFarmCleanup then pcall(env.DarkwenFarmCleanup) end
 
@@ -21,14 +20,12 @@ local CONFIG = {
     },
     SkillInterval = 0.25,
     KeyHold = 0.05,
-    PunchInterval = 0.45,
     TargetRefresh = 0.1,
 }
 
 local State = {
     AutoFarm = false,
     Skills = true,
-    Melee = true,
 }
 
 local Connections = {}
@@ -40,17 +37,12 @@ local function track(conn)
     return conn
 end
 
---// Load game modules (RemoteBank dùng cho đánh thường, MouseUtil dùng để sửa vị trí skill)
-local RemoteBank, MouseUtil
-pcall(function()
-    RemoteBank = require(ReplicatedStorage:WaitForChild("RemoteBank", 10))
-end)
+local MouseUtil
 pcall(function()
     local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
     MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
 end)
 
---// Hook GetTarget: khi auto farm bật, skill sẽ nhắm vào vị trí quái thay vì chuột
 local originalGetTarget
 if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
     originalGetTarget = MouseUtil.GetTarget
@@ -62,7 +54,6 @@ if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
     end
 end
 
---// Tìm quái gần nhất
 local function getClosestEnemy()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -86,7 +77,6 @@ local function getClosestEnemy()
     return best
 end
 
---// Cập nhật mục tiêu định kỳ (không quét mỗi frame)
 task.spawn(function()
     while alive do
         if State.AutoFarm then
@@ -98,7 +88,6 @@ task.spawn(function()
     end
 end)
 
---// Di chuyển lên đầu quái
 track(RunService.Heartbeat:Connect(function()
     if not (alive and State.AutoFarm) then
         return
@@ -115,7 +104,6 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
---// Bấm skill 1-5 (game tự gửi CastPower với vị trí đã hook)
 task.spawn(function()
     while alive do
         if State.AutoFarm and State.Skills and currentTarget and currentTarget.Parent then
@@ -133,20 +121,6 @@ task.spawn(function()
     end
 end)
 
---// Đánh thường bằng PunchRemote (đúng remote game dùng)
-task.spawn(function()
-    while alive do
-        if State.AutoFarm and State.Melee and currentTarget and currentTarget.Parent
-            and RemoteBank and RemoteBank.PunchRemote then
-            pcall(function()
-                RemoteBank.PunchRemote:Fire()
-            end)
-        end
-        task.wait(CONFIG.PunchInterval)
-    end
-end)
-
---// GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "DarkwenFarm"
 gui.ResetOnSpawn = false
@@ -199,18 +173,11 @@ end)
 makeToggle("Skill", 54, true, function(v)
     State.Skills = v
 end)
-makeToggle("Đánh thường", 98, true, function(v)
-    State.Melee = v
-end)
 
 if not originalGetTarget then
     warn("[Darkwen] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
 end
-if not (RemoteBank and RemoteBank.PunchRemote) then
-    warn("[Darkwen] Không tải được RemoteBank, đánh thường sẽ không chạy.")
-end
 
---// Cleanup
 env.DarkwenFarmCleanup = function()
     alive = false
     State.AutoFarm = false
