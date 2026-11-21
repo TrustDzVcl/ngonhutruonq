@@ -29,19 +29,69 @@ local Connections = {}
 local alive = true
 local currentTarget = nil
 local auraTargets = {}
+local skillButtons = {}
 
 local function track(conn)
     table.insert(Connections, conn)
     return conn
 end
 
-local function pressSkill(key)
-    if keypress then
-        pcall(keypress, 0.05)
-    elseif VirtualInputManager then
-        VirtualInputManager:SendKeyEvent(true, key, false, game)
-        task.wait(0.05)
-        VirtualInputManager:SendKeyEvent(false, key, false, game)
+-- TỰ ĐỘNG TÌM CÁC NÚT SKILL TRÊN MÀN HÌNH
+local function updateSkillButtons()
+    skillButtons = {}
+    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pGui then return end
+    
+    for _, gui in ipairs(pGui:GetDescendants()) do
+        if (gui:IsA("ImageButton") or gui:IsA("TextButton")) and gui.Visible then
+            local name = string.lower(gui.Name)
+            if name == "1" or name == "2" or name == "3" or name == "4" or name == "5" 
+               or string.find(name, "skill") or string.find(name, "attack") then
+                table.insert(skillButtons, gui)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while alive do
+        updateSkillButtons()
+        task.wait(2)
+    end
+end)
+
+-- HÀM BẤM SKILL (3 TẦNG)
+local function pressSkill(key, index)
+    if keypress then pcall(keypress, 0.05) end
+    
+    local btn = skillButtons[index]
+    if btn then
+        pcall(function() btn:Activate() end)
+        
+        pcall(function()
+            local pos = btn.AbsolutePosition + (btn.AbsoluteSize / 2)
+            if VirtualInputManager then
+                VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+            end
+        end)
+        
+        if VirtualInputManager then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+            end)
+        end
+    else
+        if VirtualInputManager then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+            end)
+        end
     end
 end
 
@@ -132,15 +182,15 @@ task.spawn(function()
                 for _, t in ipairs(auraTargets) do
                     if not (alive and State.KillAura and State.AutoSkill) then break end
                     currentTarget = t
-                    for _, key in ipairs(CONFIG.SkillKeys) do
-                        pressSkill(key)
+                    for i, key in ipairs(CONFIG.SkillKeys) do
+                        pressSkill(key, i)
                         task.wait(0.02)
                     end
                 end
             elseif State.AutoFarm and currentTarget and currentTarget.Parent then
-                for _, key in ipairs(CONFIG.SkillKeys) do
+                for i, key in ipairs(CONFIG.SkillKeys) do
                     if not (alive and State.AutoFarm and State.AutoSkill) then break end
-                    pressSkill(key)
+                    pressSkill(key, i)
                     task.wait(0.02)
                 end
             end
@@ -161,25 +211,27 @@ if not guiOk or not gui.Parent then
 end
 
 local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.fromOffset(200, 20)
-statusLbl.Position = UDim2.new(0.5, -100, 0, 142)
+statusLbl.Size = UDim2.fromOffset(300, 40)
+statusLbl.Position = UDim2.new(0.5, -150, 0, 142)
 statusLbl.BackgroundTransparency = 1
 statusLbl.TextColor3 = Color3.fromRGB(255, 200, 50)
 statusLbl.Font = Enum.Font.SourceSansBold
 statusLbl.TextSize = 14
+statusLbl.TextWrap = true
 statusLbl.Text = "Trạng thái: Chờ lệnh..."
 statusLbl.Parent = gui
 
 task.spawn(function()
     while alive do
+        local skillCount = #skillButtons
         if not State.AutoFarm and not State.KillAura then
-            statusLbl.Text = "Trạng thái: Đang tắt"
+            statusLbl.Text = "Trạng thái: Đang tắt\nTìm thấy "..skillCount.." nút Skill"
         elseif State.KillAura then
-            statusLbl.Text = "Kill Aura: Đang đánh " .. #auraTargets .. " quái"
+            statusLbl.Text = "Kill Aura: Đang đánh " .. #auraTargets .. " quái\nTìm thấy "..skillCount.." nút Skill"
         elseif not currentTarget then
-            statusLbl.Text = "Trạng thái: Không tìm thấy quái!"
+            statusLbl.Text = "Trạng thái: Không tìm thấy quái!\nTìm thấy "..skillCount.." nút Skill"
         else
-            statusLbl.Text = "AutoFarm: Đang đánh " .. currentTarget.Parent.Name
+            statusLbl.Text = "AutoFarm: Đang đánh " .. currentTarget.Parent.Name .. "\nTìm thấy "..skillCount.." nút Skill"
         end
         task.wait(0.2)
     end
