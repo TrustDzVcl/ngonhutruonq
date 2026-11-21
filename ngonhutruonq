@@ -13,15 +13,11 @@ local CONFIG = {
     HeightOffset = 7.5,
     MaxRange = 400,
     SkillKeys = {
-        Enum.KeyCode.One,
-        Enum.KeyCode.Two,
-        Enum.KeyCode.Three,
-        Enum.KeyCode.Four,
-        Enum.KeyCode.Five,
+        Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Five,
     },
     SkillInterval = 0.25,
     KeyHold = 0.05,
-    TargetRefresh = 0.1,
+    TargetRefresh = 0.2,
 }
 
 local State = {
@@ -41,56 +37,36 @@ end
 
 local function cleanEffect(obj)
     if not State.BoostFPS then return end
-    if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") or obj:IsA("Explosion") then
-        pcall(function()
+    pcall(function()
+        if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
             obj.Enabled = false
-            if obj:IsA("ParticleEmitter") then
-                obj.Rate = 0
-            end
-        end)
-    elseif obj:IsA("Decal") or obj:IsA("Texture") then
-        pcall(function()
+            if obj:IsA("ParticleEmitter") then obj.Rate = 0 end
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
             obj.Transparency = 1
-        end)
-    elseif obj:IsA("Trail") then
-        pcall(function()
+        elseif obj:IsA("Trail") then
             obj.Enabled = false
-        end)
-    end
+        end
+    end)
 end
 
 local function applyBoostFPS()
     if not State.BoostFPS then return end
-    
     pcall(function()
-        settings().Rendering.QualityLevel = 1
-    end)
-    
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd = 9e9
-    Lighting.Brightness = 1
-    Lighting.EnvironmentDiffuseScale = 0
-    Lighting.EnvironmentSpecularScale = 0
-
-    for _, v in ipairs(Lighting:GetChildren()) do
-        if v:IsA("Sky") then
-            v.StarCount = 0
-            v.Clouds = false
-        elseif v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") or v:IsA("BloomEffect") then
-            v.Enabled = false
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        for _, v in ipairs(Lighting:GetChildren()) do
+            if v:IsA("Sky") then
+                v.StarCount = 0
+                v.Clouds = false
+            elseif v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") or v:IsA("BloomEffect") then
+                v.Enabled = false
+            end
         end
-    end
-
-    local terrain = workspace:FindFirstChildOfClass("Terrain")
-    if terrain then
-        terrain.WaterWaveSize = 0
-        terrain.WaterWaveSpeed = 0
-        terrain.WaterTransparency = 1
-    end
-
-    for _, v in ipairs(workspace:GetDescendants()) do
-        cleanEffect(v)
-    end
+        for _, v in ipairs(workspace:GetDescendants()) do
+            cleanEffect(v)
+        end
+    end)
 end
 
 if State.BoostFPS then
@@ -99,9 +75,9 @@ if State.BoostFPS then
 end
 
 local function pressSkill(key)
-    if keypress then
-        pcall(keypress, CONFIG.KeyHold)
-    end
+    pcall(function()
+        if keypress then keypress(key) end
+    end)
     pcall(function()
         VirtualInputManager:SendKeyEvent(true, key, false, game)
         task.wait(CONFIG.KeyHold)
@@ -111,8 +87,10 @@ end
 
 local MouseUtil
 pcall(function()
-    local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
-    MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
+    local utils = ReplicatedStorage:FindFirstChild("Utilities")
+    if utils then
+        MouseUtil = require(utils:WaitForChild("MouseUtil", 5))
+    end
 end)
 
 local originalGetTarget
@@ -129,12 +107,10 @@ end
 local function getClosestEnemy()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        return nil
-    end
+    if not root then return nil end
 
     local best, bestDist = nil, CONFIG.MaxRange
-    for _, obj in ipairs(workspace:GetDescendants()) do
+    for _, obj in ipairs(workspace:GetChildren()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
@@ -144,6 +120,19 @@ local function getClosestEnemy()
                     best, bestDist = eRoot, d
                 end
             end
+        elseif obj:IsA("Folder") then
+            for _, subObj in ipairs(obj:GetChildren()) do
+                if subObj:IsA("Model") and not Players:GetPlayerFromCharacter(subObj) then
+                    local hum = subObj:FindFirstChildOfClass("Humanoid")
+                    local eRoot = subObj:FindFirstChild("HumanoidRootPart") or subObj:FindFirstChild("Torso")
+                    if hum and hum.Health > 0 and eRoot then
+                        local d = (root.Position - eRoot.Position).Magnitude
+                        if d < bestDist then
+                            best, bestDist = eRoot, d
+                        end
+                    end
+                end
+            end
         end
     end
     return best
@@ -151,42 +140,41 @@ end
 
 task.spawn(function()
     while alive do
-        if State.AutoFarm then
-            currentTarget = getClosestEnemy()
-        else
-            currentTarget = nil
-        end
+        pcall(function()
+            if State.AutoFarm then
+                currentTarget = getClosestEnemy()
+            else
+                currentTarget = nil
+            end
+        end)
         task.wait(CONFIG.TargetRefresh)
     end
 end)
 
 track(RunService.Heartbeat:Connect(function()
-    if not (alive and State.AutoFarm) then
-        return
-    end
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local target = currentTarget
-    if root and target and target.Parent then
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.CFrame = CFrame.new(
-            target.Position + Vector3.new(0, CONFIG.HeightOffset, 0),
-            target.Position
-        )
-    end
+    if not (alive and State.AutoFarm) then return end
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local target = currentTarget
+        if root and target and target.Parent then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.CFrame = CFrame.new(target.Position + Vector3.new(0, CONFIG.HeightOffset, 0), target.Position)
+        end
+    end)
 end))
 
 task.spawn(function()
     while alive do
-        if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
-            for _, key in ipairs(CONFIG.SkillKeys) do
-                if not (alive and State.AutoFarm and State.AutoSkill) then
-                    break
+        pcall(function()
+            if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
+                for _, key in ipairs(CONFIG.SkillKeys) do
+                    if not (alive and State.AutoFarm and State.AutoSkill) then break end
+                    pressSkill(key)
+                    task.wait(0.05)
                 end
-                pressSkill(key)
-                task.wait(0.05)
             end
-        end
+        end)
         task.wait(CONFIG.SkillInterval)
     end
 end)
@@ -196,17 +184,11 @@ gui.Name = "TrustPremium"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 local guiOk = false
-if gethui then
-    guiOk = pcall(function()
-        gui.Parent = gethui()
-    end)
-end
+if gethui then guiOk = pcall(function() gui.Parent = gethui() end) end
 if not guiOk or not gui.Parent then
-    local ok = pcall(function()
-        gui.Parent = CoreGui
-    end)
+    local ok = pcall(function() gui.Parent = CoreGui end)
     if not ok or not gui.Parent then
-        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+        pcall(function() gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end)
     end
 end
 
@@ -237,22 +219,12 @@ local function makeToggle(name, y, default, onChange)
     return btn
 end
 
-makeToggle("AutoFarm", 10, false, function(v)
-    State.AutoFarm = v
-end)
-makeToggle("AutoSkill", 54, true, function(v)
-    State.AutoSkill = v
-end)
+makeToggle("AutoFarm", 10, false, function(v) State.AutoFarm = v end)
+makeToggle("AutoSkill", 54, true, function(v) State.AutoSkill = v end)
 makeToggle("Boost FPS", 98, true, function(v)
     State.BoostFPS = v
-    if v then
-        applyBoostFPS()
-    end
+    if v then applyBoostFPS() end
 end)
-
-if not originalGetTarget then
-    warn("[TrustPremium] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
-end
 
 env.TrustPremiumCleanup = function()
     alive = false
@@ -261,13 +233,9 @@ env.TrustPremiumCleanup = function()
         MouseUtil.GetTarget = originalGetTarget
     end
     for _, conn in ipairs(Connections) do
-        pcall(function()
-            conn:Disconnect()
-        end)
+        pcall(function() conn:Disconnect() end)
     end
     table.clear(Connections)
-    if gui then
-        gui:Destroy()
-    end
+    if gui then gui:Destroy() end
     env.TrustPremiumCleanup = nil
 end
