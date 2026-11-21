@@ -1,5 +1,5 @@
 local env = (getgenv and getgenv()) or _G
-if env.DarkwenFarmCleanup then pcall(env.DarkwenFarmCleanup) end
+if env.TrustCleanup then pcall(env.TrustCleanup) end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,7 +10,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
     HeightOffset = 7.5,
-    MaxRange = 400,
+    MaxRange = 500,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -122,7 +122,7 @@ task.spawn(function()
 end)
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "DarkwenFarm"
+gui.Name = "Trust"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 local guiOk = false
@@ -170,15 +170,15 @@ end
 makeToggle("AutoFarm", 10, false, function(v)
     State.AutoFarm = v
 end)
-makeToggle("Skill", 54, true, function(v)
+makeToggle("AutoSkill", 54, true, function(v)
     State.Skills = v
 end)
 
 if not originalGetTarget then
-    warn("[Darkwen] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
+    warn("[Trust] MouseUtil.GetTarget, Skill có thể vẫn lệch vị trí.")
 end
 
-env.DarkwenFarmCleanup = function()
+env.TrustCleanup = function()
     alive = false
     State.AutoFarm = false
     if originalGetTarget and type(MouseUtil) == "table" then
@@ -193,5 +193,5 @@ env.DarkwenFarmCleanup = function()
     if gui then
         gui:Destroy()
     end
-    env.DarkwenFarmCleanup = nil
+    env.TrustCleanup = nil
 end
