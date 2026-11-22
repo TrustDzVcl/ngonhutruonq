@@ -617,7 +617,7 @@ local camera = Workspace.CurrentCamera or Workspace:WaitForChild("CurrentCamera"
 local isSmall = camera.ViewportSize.X < 800
 
 Window = Fluent:CreateWindow({
-    Title = "TrustPremium",
+    Title = "Trust",
     SubTitle = "Anime CardVerse",
     TabWidth = isSmall and 110 or 140,
     Size = isSmall and UDim2.fromOffset(480, 340) or UDim2.fromOffset(580, 420),
@@ -956,7 +956,7 @@ Tabs.Teleport:AddButton({
     end,
 })
 Tabs.Teleport:AddDropdown("TeleportPlayer", {
-    Title = "Chọn người chơi",
+    Title = "Teleport Player",
     Values = listPlayers(),
     Multi = false,
     Default = "",
@@ -965,13 +965,13 @@ Tabs.Teleport:AddDropdown("TeleportPlayer", {
     end,
 })
 Tabs.Teleport:AddButton({
-    Title = "Làm mới danh sách người chơi",
+    Title = "Reset Players",
     Callback = function()
         Options.TeleportPlayer:SetValues(listPlayers())
     end,
 })
 Tabs.Teleport:AddButton({
-    Title = "Teleport tới người chơi",
+    Title = "Teleport Player",
     Callback = function()
         local plr = State.TeleportPlayer and Players:FindFirstChild(State.TeleportPlayer)
         local r = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
@@ -1014,7 +1014,7 @@ Tabs.Webhook:AddToggle("WebhookOn", {
     end,
 })
 Tabs.Webhook:AddSlider("WebhookInterval", {
-    Title = "Chu kỳ (giây)",
+    Title = "Time",
     Default = 60,
     Min = 30,
     Max = 600,
@@ -1035,7 +1035,7 @@ Tabs.Webhook:AddButton({
 })
 
 Tabs.Settings:AddDropdown("Theme", {
-    Title = "Giao diện",
+    Title = "Themes",
     Values = THEMES,
     Multi = false,
     Default = "Darker",
