@@ -11,6 +11,7 @@ local LocalPlayer = Players.LocalPlayer
 local CONFIG = {
     HeightOffset = 7,
     MaxRange = 1000,
+    SkillRange = 15,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -118,23 +119,38 @@ track(RunService.Stepped:Connect(function()
     local target = currentTarget
     
     if root and target and target.Parent then
-        local targetPos = target.Position + Vector3.new(0, CONFIG.HeightOffset, 0)
-        local targetCFrame = CFrame.new(targetPos, target.Position)
-        root.CFrame = root.CFrame:Lerp(targetCFrame, 0.25)
+        local currentPos = root.Position
+        local targetX = target.Position.X
+        local targetZ = target.Position.Z
+        local targetY = target.Position.Y + CONFIG.HeightOffset
+        
+        local smoothPos = currentPos:Lerp(Vector3.new(targetX, targetY, targetZ), 0.25)
+        local lookAt = Vector3.new(targetX, smoothPos.Y, targetZ)
+        
+        root.CFrame = CFrame.new(smoothPos, lookAt)
     end
 end))
 
 task.spawn(function()
     while alive do
         if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
-            for _, key in ipairs(CONFIG.SkillKeys) do
-                if not (alive and State.AutoFarm and State.AutoSkill) then
-                    break
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            
+            if root then
+                local distance = (root.Position - currentTarget.Position).Magnitude
+                
+                if distance <= CONFIG.SkillRange then
+                    for _, key in ipairs(CONFIG.SkillKeys) do
+                        if not (alive and State.AutoFarm and State.AutoSkill) then
+                            break
+                        end
+                        VirtualInputManager:SendKeyEvent(true, key, false, game)
+                        task.wait(CONFIG.KeyHold)
+                        VirtualInputManager:SendKeyEvent(false, key, false, game)
+                        task.wait(0.05)
+                    end
                 end
-                VirtualInputManager:SendKeyEvent(true, key, false, game)
-                task.wait(CONFIG.KeyHold)
-                VirtualInputManager:SendKeyEvent(false, key, false, game)
-                task.wait(0.05)
             end
         end
         task.wait(CONFIG.SkillInterval)
