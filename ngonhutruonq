@@ -5,12 +5,11 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
     HeightOffset = 8,
-    MaxRange = ,700,
+    MaxRange = 500,
     SkillRange = 25,
     SkillKeys = {
         Enum.KeyCode.One,
@@ -38,6 +37,19 @@ local function track(conn)
     return conn
 end
 
+pcall(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if hum then hum.PlatformStand = false end
+        if root then
+            root.Anchored = false
+            root.CanCollide = true
+        end
+    end
+end)
+
 local MouseUtil
 pcall(function()
     local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
@@ -62,19 +74,18 @@ local function getClosestEnemy()
 
     local best, bestDist = nil, CONFIG.MaxRange
     
-    for _, obj in ipairs(workspace:GetDescendants()) do
+    for _, obj in ipairs(workspace:GetChildren()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
             
             local isSummon = false
-            local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator") or obj:FindFirstChild("Master") or obj:FindFirstChild("Player")
+            local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator")
             if owner and owner:IsA("ObjectValue") and owner.Value then
-                if owner.Value:IsA("Player") or owner.Value:IsA("Model") then isSummon = true end
+                if owner.Value == LocalPlayer or owner.Value == char then
+                    isSummon = true
+                end
             end
-            
-            local ownerAttr = obj:GetAttribute("Owner") or obj:GetAttribute("OwnerUserId") or obj:GetAttribute("Creator")
-            if ownerAttr then isSummon = true end
             
             local nameLower = string.lower(obj.Name)
             if nameLower:find("pet") or nameLower:find("summon") or nameLower:find("clone") or nameLower:find("minion") then
@@ -132,10 +143,11 @@ track(RunService.RenderStepped:Connect(function()
         local destY = root.Position.Y
         
         local destPos = Vector3.new(destX, destY, destZ)
-        local lookAt = Vector3.new(destX, destY - 1, destZ)
+        local lookAt = Vector3.new(destX, destY, destZ)
         
-        local targetCFrame = CFrame.new(destPos, lookAt)
+        local targetCFrame = CFrame.lookAt(destPos, lookAt)
         root.CFrame = root.CFrame:Lerp(targetCFrame, 0.2)
+        root.AssemblyLinearVelocity = Vector3.zero
     end
 end))
 
@@ -171,7 +183,7 @@ if gethui then
     guiOk = pcall(function() gui.Parent = gethui() end)
 end
 if not guiOk or not gui.Parent then
-    local ok = pcall(function() gui.Parent = CoreGui end)
+    local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
     if not ok or not gui.Parent then
         gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
     end
@@ -212,7 +224,6 @@ makeToggle("AutoFarm", 10, false, function(v)
         local root = char:FindFirstChild("HumanoidRootPart")
         if hum then hum.PlatformStand = v end
         if root then
-            root.Anchored = v
             root.CanCollide = not v
             if not v then
                 root.AssemblyLinearVelocity = Vector3.zero
@@ -225,10 +236,6 @@ end)
 makeToggle("AutoSkill", 54, true, function(v)
     State.AutoSkill = v
 end)
-
-if not originalGetTarget then
-    warn("[TrustPremium] Khong hook duoc MouseUtil.GetTarget.")
-end
 
 env.TrustPremiumCleanup = function()
     alive = false
