@@ -1,4 +1,3 @@
---// Darkwen | Anime CardVerse | Fluent Menu (Main, Quest, Player, ESP, Misc, Shop, Server, Teleport, Webhook, Settings)
 local env = (getgenv and getgenv()) or _G
 if env.DarkwenFluentCleanup then pcall(env.DarkwenFluentCleanup) end
 
