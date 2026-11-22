@@ -10,7 +10,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
     HeightOffset = 8,
-    MaxRange = 700,
+    MaxRange = 500,
     SkillRange = 20,
     SkillKeys = {
         Enum.KeyCode.One,
