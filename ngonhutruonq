@@ -1077,6 +1077,7 @@ end)
 
 Window:SelectTab(1)
 
+--// ================= FLOATING DRAGGABLE BUTTON =================
 local floatHolder = Instance.new("ScreenGui")
 floatHolder.Name = "TrustPremiumFloat"
 floatHolder.ResetOnSpawn = false
@@ -1097,26 +1098,89 @@ end
 floatGui = floatHolder
 
 local floatBtn = Instance.new("TextButton")
-floatBtn.Size = UDim2.fromOffset(44, 44)
-floatBtn.Position = UDim2.new(0, 10, 0.5, -22)
+floatBtn.Size = UDim2.fromOffset(48, 48)
+floatBtn.Position = UDim2.new(0, 20, 0.5, -24)
 floatBtn.BackgroundColor3 = Color3.fromRGB(140, 90, 255)
 floatBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 floatBtn.Font = Enum.Font.GothamBold
-floatBtn.TextSize = 18
+floatBtn.TextSize = 20
 floatBtn.Text = "T"
 floatBtn.BorderSizePixel = 0
 floatBtn.AutoButtonColor = false
+floatBtn.Active = true
 floatBtn.Parent = floatHolder
+
+--// Nút vuông: bo góc nhẹ cho đẹp (bỏ cái này để vuông hẳn)
 local floatCorner = Instance.new("UICorner")
-floatCorner.CornerRadius = UDim.new(1, 0)
+floatCorner.CornerRadius = UDim.new(0, 6)  -- bo nhẹ; đặt UDim.new(0,0) để vuông hẳn
 floatCorner.Parent = floatBtn
 
+local floatStroke = Instance.new("UIStroke")
+floatStroke.Color = Color3.fromRGB(255, 255, 255)
+floatStroke.Thickness = 1.5
+floatStroke.Transparency = 0.4
+floatStroke.Parent = floatBtn
+
+--// Kéo thả
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+local moved = false
+
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    if math.abs(delta.X) > 3 or math.abs(delta.Y) > 3 then
+        moved = true
+    end
+    floatBtn.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+track(floatBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        moved = false
+        dragStart = input.Position
+        startPos = floatBtn.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end))
+
+track(floatBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end))
+
+track(UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        updateDrag(input)
+    end
+end))
+
 track(floatBtn.MouseButton1Click:Connect(function()
+    if moved then
+        moved = false
+        return
+    end
     pcall(function()
         Window:Minimize()
     end)
 end))
 
+--// ================= CLEANUP =================
 env.TrustPremium = function()
     alive = false
     State.AutoFarm = false
