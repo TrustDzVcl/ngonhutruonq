@@ -9,9 +9,9 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
-    HeightOffset = 7,
-    MaxRange = 1000,
-    SkillRange = 15,
+    HeightOffset = 8,
+    MaxRange = 700,
+    SkillRange = 20,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -19,9 +19,9 @@ local CONFIG = {
         Enum.KeyCode.Four,
         Enum.KeyCode.Five,
     },
-    SkillInterval = 0.25,
+    SkillInterval = 0.3,
     KeyHold = 0.05,
-    TargetRefresh = 0.2,
+    TargetRefresh = 0.5,
 }
 
 local State = {
@@ -58,9 +58,7 @@ end
 local function getClosestEnemy()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        return nil
-    end
+    if not root then return nil end
 
     local best, bestDist = nil, CONFIG.MaxRange
     
@@ -70,18 +68,13 @@ local function getClosestEnemy()
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
             
             local isSummon = false
-            
             local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator") or obj:FindFirstChild("Master") or obj:FindFirstChild("Player")
             if owner and owner:IsA("ObjectValue") and owner.Value then
-                if owner.Value:IsA("Player") or owner.Value:IsA("Model") then
-                    isSummon = true
-                end
+                if owner.Value:IsA("Player") or owner.Value:IsA("Model") then isSummon = true end
             end
             
             local ownerAttr = obj:GetAttribute("Owner") or obj:GetAttribute("OwnerUserId") or obj:GetAttribute("Creator")
-            if ownerAttr then
-                isSummon = true
-            end
+            if ownerAttr then isSummon = true end
             
             local nameLower = string.lower(obj.Name)
             if nameLower:find("pet") or nameLower:find("summon") or nameLower:find("clone") or nameLower:find("minion") then
@@ -102,7 +95,23 @@ end
 task.spawn(function()
     while alive do
         if State.AutoFarm then
-            currentTarget = getClosestEnemy()
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            
+            local keepTarget = false
+            if currentTarget and currentTarget.Parent and root then
+                local hum = currentTarget.Parent:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 then
+                    local dist = (root.Position - currentTarget.Position).Magnitude
+                    if dist <= CONFIG.MaxRange then
+                        keepTarget = true
+                    end
+                end
+            end
+            
+            if not keepTarget then
+                currentTarget = getClosestEnemy()
+            end
         else
             currentTarget = nil
         end
@@ -110,24 +119,21 @@ task.spawn(function()
     end
 end)
 
-track(RunService.Stepped:Connect(function()
-    if not (alive and State.AutoFarm) then
-        return
-    end
+track(RunService.RenderStepped:Connect(function()
+    if not (alive and State.AutoFarm) then return end
+    
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local target = currentTarget
     
     if root and target and target.Parent then
-        local currentPos = root.Position
-        local targetX = target.Position.X
-        local targetZ = target.Position.Z
-        local targetY = target.Position.Y + CONFIG.HeightOffset
+        local targetXZ = Vector3.new(target.Position.X, root.Position.Y, target.Position.Z)
+        local lookAt = Vector3.new(target.Position.X, root.Position.Y, target.Position.Z)
         
-        local smoothPos = currentPos:Lerp(Vector3.new(targetX, targetY, targetZ), 0.25)
-        local lookAt = Vector3.new(targetX, smoothPos.Y, targetZ)
+        local currentCFrame = root.CFrame
+        local targetCFrame = CFrame.new(targetXZ, lookAt)
         
-        root.CFrame = CFrame.new(smoothPos, lookAt)
+        root.CFrame = currentCFrame:Lerp(targetCFrame, 0.2)
     end
 end))
 
@@ -139,12 +145,9 @@ task.spawn(function()
             
             if root then
                 local distance = (root.Position - currentTarget.Position).Magnitude
-                
                 if distance <= CONFIG.SkillRange then
                     for _, key in ipairs(CONFIG.SkillKeys) do
-                        if not (alive and State.AutoFarm and State.AutoSkill) then
-                            break
-                        end
+                        if not (alive and State.AutoFarm and State.AutoSkill) then break end
                         VirtualInputManager:SendKeyEvent(true, key, false, game)
                         task.wait(CONFIG.KeyHold)
                         VirtualInputManager:SendKeyEvent(false, key, false, game)
@@ -163,14 +166,10 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 local guiOk = false
 if gethui then
-    guiOk = pcall(function()
-        gui.Parent = gethui()
-    end)
+    guiOk = pcall(function() gui.Parent = gethui() end)
 end
 if not guiOk or not gui.Parent then
-    local ok = pcall(function()
-        gui.Parent = CoreGui
-    end)
+    local ok = pcall(function() gui.Parent = CoreGui end)
     if not ok or not gui.Parent then
         gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
     end
@@ -209,9 +208,7 @@ makeToggle("AutoFarm", 10, false, function(v)
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         local root = char:FindFirstChild("HumanoidRootPart")
-        if hum then
-            hum.PlatformStand = v
-        end
+        if hum then hum.PlatformStand = v end
         if root then
             root.Anchored = v
             root.CanCollide = not v
@@ -228,7 +225,7 @@ makeToggle("AutoSkill", 54, true, function(v)
 end)
 
 if not originalGetTarget then
-    warn("[TrustPremium] Khong hook duoc MouseUtil.GetTarget, skill co the van lech vi tri.")
+    warn("[TrustPremium] Khong hook duoc MouseUtil.GetTarget.")
 end
 
 env.TrustPremiumCleanup = function()
@@ -250,13 +247,9 @@ env.TrustPremiumCleanup = function()
     end
 
     for _, conn in ipairs(Connections) do
-        pcall(function()
-            conn:Disconnect()
-        end)
+        pcall(function() conn:Disconnect() end)
     end
     table.clear(Connections)
-    if gui then
-        gui:Destroy()
-    end
+    if gui then gui:Destroy() end
     env.TrustPremiumCleanup = nil
 end
