@@ -20,7 +20,7 @@ local CONFIG = {
     },
     SkillInterval = 0.25,
     KeyHold = 0.05,
-    TargetRefresh = 0.3,
+    TargetRefresh = 0.2,
 }
 
 local State = {
@@ -116,9 +116,11 @@ track(RunService.Stepped:Connect(function()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local target = currentTarget
+    
     if root and target and target.Parent then
         local targetPos = target.Position + Vector3.new(0, CONFIG.HeightOffset, 0)
-        root.CFrame = CFrame.new(targetPos, target.Position)
+        local targetCFrame = CFrame.new(targetPos, target.Position)
+        root.CFrame = root.CFrame:Lerp(targetCFrame, 0.25)
     end
 end))
 
@@ -197,8 +199,10 @@ makeToggle("AutoFarm", 10, false, function(v)
         if root then
             root.Anchored = v
             root.CanCollide = not v
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
+            if not v then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end
         end
     end
 end)
