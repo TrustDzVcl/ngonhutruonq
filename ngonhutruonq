@@ -1,6 +1,3 @@
-local env = (getgenv and getgenv()) or _G
-if env.TrustPremiumCleanup then pcall(env.TrustPremiumCleanup) end
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,7 +17,7 @@ local CONFIG = {
     },
     SkillInterval = 0.3,
     KeyHold = 0.05,
-    TargetRefresh = 0.5,
+    TargetRefresh = 0.3,
 }
 
 local State = {
@@ -36,6 +33,61 @@ local function track(conn)
     table.insert(Connections, conn)
     return conn
 end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "TrustPremium"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999
+local guiOk = false
+if gethui then
+    guiOk = pcall(function() gui.Parent = gethui() end)
+end
+if not guiOk or not gui.Parent then
+    local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
+    if not ok or not gui.Parent then
+        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+end
+
+local function makeToggle(name, y, default, onChange)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.fromOffset(160, 36)
+    btn.Position = UDim2.new(0.5, -80, 0, y)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 16
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = gui
+
+    local value = default
+    local function render()
+        btn.Text = name .. ": " .. (value and "ON" or "OFF")
+        btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    end
+    render()
+
+    track(btn.MouseButton1Click:Connect(function()
+        value = not value
+        render()
+        onChange(value)
+    end))
+    return btn
+end
+
+makeToggle("AutoFarm", 10, false, function(v)
+    State.AutoFarm = v
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = v end
+    end
+end)
+
+makeToggle("AutoSkill", 54, true, function(v)
+    State.AutoSkill = v
+end)
 
 pcall(function()
     local char = LocalPlayer.Character
@@ -138,16 +190,18 @@ track(RunService.RenderStepped:Connect(function()
     local target = currentTarget
     
     if root and target and target.Parent then
-        local destX = target.Position.X
-        local destZ = target.Position.Z
-        local destY = root.Position.Y
-        
-        local destPos = Vector3.new(destX, destY, destZ)
-        local lookAt = Vector3.new(destX, destY, destZ)
-        
-        local targetCFrame = CFrame.lookAt(destPos, lookAt)
-        root.CFrame = root.CFrame:Lerp(targetCFrame, 0.2)
-        root.AssemblyLinearVelocity = Vector3.zero
+        pcall(function()
+            local destX = target.Position.X
+            local destZ = target.Position.Z
+            local destY = root.Position.Y
+            
+            local destPos = Vector3.new(destX, destY, destZ)
+            local lookAt = Vector3.new(destX, destY - 1, destZ)
+            
+            local targetCFrame = CFrame.new(destPos, lookAt)
+            root.CFrame = root.CFrame:Lerp(targetCFrame, 0.2)
+            root.AssemblyLinearVelocity = Vector3.zero
+        end)
     end
 end))
 
@@ -174,70 +228,7 @@ task.spawn(function()
     end
 end)
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "TrustPremium"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999
-local guiOk = false
-if gethui then
-    guiOk = pcall(function() gui.Parent = gethui() end)
-end
-if not guiOk or not gui.Parent then
-    local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
-    if not ok or not gui.Parent then
-        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    end
-end
-
-local function makeToggle(name, y, default, onChange)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = UDim2.fromOffset(160, 36)
-    btn.Position = UDim2.new(0.5, -80, 0, y)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 16
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.Parent = gui
-
-    local value = default
-    local function render()
-        btn.Text = name .. ": " .. (value and "ON" or "OFF")
-        btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    end
-    render()
-
-    track(btn.MouseButton1Click:Connect(function()
-        value = not value
-        render()
-        onChange(value)
-    end))
-    return btn
-end
-
-makeToggle("AutoFarm", 10, false, function(v)
-    State.AutoFarm = v
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if hum then hum.PlatformStand = v end
-        if root then
-            root.CanCollide = not v
-            if not v then
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-            end
-        end
-    end
-end)
-
-makeToggle("AutoSkill", 54, true, function(v)
-    State.AutoSkill = v
-end)
-
-env.TrustPremiumCleanup = function()
+_G.TrustPremiumCleanup = function()
     alive = false
     State.AutoFarm = false
     if originalGetTarget and type(MouseUtil) == "table" then
@@ -260,5 +251,4 @@ env.TrustPremiumCleanup = function()
     end
     table.clear(Connections)
     if gui then gui:Destroy() end
-    env.TrustPremiumCleanup = nil
 end
