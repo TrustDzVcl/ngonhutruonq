@@ -1,197 +1,1176 @@
+--// Darkwen | Anime CardVerse | Fluent Menu (Main, Quest, Player, ESP, Misc, Shop, Server, Teleport, Webhook, Settings)
 local env = (getgenv and getgenv()) or _G
-if env.TrustPremiumCleanup then pcall(env.TrustPremiumCleanup) end
+if env.DarkwenFluentCleanup then pcall(env.DarkwenFluentCleanup) end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
-local CONFIG = {
-    HeightOffset = 7.5,
-    MaxRange = 400,
-    SkillKeys = {
-        Enum.KeyCode.One,
-        Enum.KeyCode.Two,
-        Enum.KeyCode.Three,
-        Enum.KeyCode.Four,
-        Enum.KeyCode.Five,
-    },
-    SkillInterval = 0.25,
-    KeyHold = 0.05,
-    TargetRefresh = 0.1,
-}
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+local request = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+
+local MODE_TOP = "Trên đầu"
+local MODE_BOTTOM = "Dưới chân"
+local MODE_BACK = "Sau lưng"
+local MODE_FRONT = "Trước mặt"
+local FARM_MODES = {MODE_TOP, MODE_BOTTOM, MODE_BACK, MODE_FRONT}
+local MAP_FOLDER_NAMES = {"Maps", "Map", "Worlds", "World", "Stages", "Areas"}
+local SUMMON_WORDS = {"pet", "summon", "clone", "minion"}
+local QUEST_WORDS = {"quest", "nhiệm vụ", "nhiem vu"}
+local SHOP_WORDS = {"shop", "cửa hàng", "cua hang"}
+local THEMES = {"Dark", "Darker", "Light", "Aqua", "Amethyst"}
+local ALL_LABEL = "Tất cả"
 
 local State = {
     AutoFarm = false,
+    FarmMode = MODE_TOP,
+    FarmDistance = 7,
+    DetectRange = 300,
     AutoSkill = true,
+    SkillDelay = 0.3,
+    AutoMelee = true,
+    SelectedMap = nil,
+    TeleportMap = nil,
+    TeleportPlayer = nil,
+    AutoQuest = false,
+    QuestRange = 25,
+    WalkEnabled = false,
+    WalkSpeed = 16,
+    JumpEnabled = false,
+    JumpPower = 50,
+    InfJump = false,
+    Noclip = false,
+    ESPPlayers = false,
+    ESPEnemies = false,
+    ESPRange = 500,
+    HideTeammates = true,
+    AntiAFK = true,
+    WebhookURL = "",
+    WebhookOn = false,
+    WebhookInterval = 60,
 }
 
 local Connections = {}
 local alive = true
-local currentTarget = nil
+local currentEntry = nil
+local farmActive = false
+local espObjects = {}
+local MouseUtil, RemoteBank
+local originalGetTarget
+local Window
+local floatGui
 
 local function track(conn)
     table.insert(Connections, conn)
     return conn
 end
 
-local MouseUtil
+local function notify(title, content)
+    pcall(function()
+        Fluent:Notify({Title = title, Content = content, Duration = 4})
+    end)
+end
+
+local function getChar()
+    return LocalPlayer.Character
+end
+
+local function getRoot(char)
+    char = char or getChar()
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum(char)
+    char = char or getChar()
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function tpTo(pos)
+    local root = getRoot()
+    if root and pos then
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0))
+    end
+end
+
+--// Load game modules
 pcall(function()
-    local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
-    MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
+    MouseUtil = require(ReplicatedStorage:WaitForChild("Utilities", 10):WaitForChild("MouseUtil", 10))
+end)
+pcall(function()
+    RemoteBank = require(ReplicatedStorage:WaitForChild("RemoteBank", 10))
 end)
 
-local originalGetTarget
 if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
     originalGetTarget = MouseUtil.GetTarget
     MouseUtil.GetTarget = function(...)
-        if State.AutoFarm and currentTarget and currentTarget.Parent then
-            return currentTarget.Position
+        if State.AutoFarm and currentEntry and currentEntry.Root and currentEntry.Root.Parent then
+            return currentEntry.Root.Position
         end
         return originalGetTarget(...)
     end
 end
 
-local function getClosestEnemy()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        return nil
+--// Enemy scan
+local function isSummon(obj)
+    local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator") or obj:FindFirstChild("Master")
+    if owner and owner:IsA("ObjectValue") and owner.Value then
+        return true
     end
+    if obj:GetAttribute("Owner") or obj:GetAttribute("OwnerUserId") or obj:GetAttribute("Creator") then
+        return true
+    end
+    local n = string.lower(obj.Name)
+    for _, w in ipairs(SUMMON_WORDS) do
+        if string.find(n, w, 1, true) then
+            return true
+        end
+    end
+    return false
+end
 
-    local best, bestDist = nil, CONFIG.MaxRange
-    for _, obj in ipairs(workspace:GetDescendants()) do
+local function scanEnemies(maxRange)
+    local root = getRoot()
+    if not root then
+        return {}
+    end
+    local char = getChar()
+    local list = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            if hum and hum.Health > 0 and eRoot then
+            if hum and hum.Health > 0 and eRoot and not isSummon(obj) then
                 local d = (root.Position - eRoot.Position).Magnitude
-                if d < bestDist then
-                    best, bestDist = eRoot, d
+                if d <= maxRange then
+                    table.insert(list, {Model = obj, Root = eRoot, Hum = hum, Dist = d})
                 end
             end
         end
     end
-    return best
+    table.sort(list, function(a, b)
+        return a.Dist < b.Dist
+    end)
+    return list
 end
 
+--// Target loop
 task.spawn(function()
     while alive do
         if State.AutoFarm then
-            currentTarget = getClosestEnemy()
+            local list = scanEnemies(State.DetectRange)
+            currentEntry = list[1]
         else
-            currentTarget = nil
+            currentEntry = nil
         end
-        task.wait(CONFIG.TargetRefresh)
+        task.wait(0.2)
     end
 end)
 
+--// Farm positioning
+local function farmCFrame(tRoot)
+    local p = tRoot.Position
+    local d = State.FarmDistance
+    local look = tRoot.CFrame.LookVector
+    local pos
+    if State.FarmMode == MODE_BOTTOM then
+        pos = p - Vector3.new(0, d, 0)
+    elseif State.FarmMode == MODE_BACK then
+        pos = p - look * d
+    elseif State.FarmMode == MODE_FRONT then
+        pos = p + look * d
+    else
+        pos = p + Vector3.new(0, d, 0)
+    end
+    return CFrame.lookAt(pos, p)
+end
+
+local function setFarmHold(on)
+    local char = getChar()
+    local root = getRoot(char)
+    local hum = getHum(char)
+    if on then
+        if root then
+            root.Anchored = true
+            root.CanCollide = false
+        end
+        if hum then
+            hum.PlatformStand = true
+        end
+    else
+        if root then
+            root.Anchored = false
+            root.CanCollide = true
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+        if hum then
+            hum.PlatformStand = false
+        end
+    end
+    farmActive = on
+end
+
 track(RunService.Heartbeat:Connect(function()
-    if not (alive and State.AutoFarm) then
+    if not alive then
         return
     end
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local target = currentTarget
-    if root and target and target.Parent then
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.CFrame = CFrame.new(
-            target.Position + Vector3.new(0, CONFIG.HeightOffset, 0),
-            target.Position
-        )
-end
+    if not State.AutoFarm then
+        if farmActive then
+            setFarmHold(false)
+        end
+        return
+    end
+    local entry = currentEntry
+    local valid = entry and entry.Root and entry.Root.Parent and entry.Hum and entry.Hum.Health > 0
+    local root = getRoot()
+    local hum = getHum()
+    if not (root and hum and hum.Health > 0) then
+        return
+    end
+    if not valid then
+        if farmActive then
+            setFarmHold(false)
+        end
+        return
+    end
+    if not farmActive then
+        setFarmHold(true)
+    end
+    root.CFrame = farmCFrame(entry.Root)
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
 end))
+
+--// Auto melee
+task.spawn(function()
+    while alive do
+        local entry = currentEntry
+        local root = getRoot()
+        if State.AutoFarm and State.AutoMelee and RemoteBank and RemoteBank.PunchRemote
+            and entry and entry.Root and entry.Root.Parent and entry.Hum.Health > 0 and root then
+            local d = (root.Position - entry.Root.Position).Magnitude
+            if d <= 25 then
+                pcall(function()
+                    RemoteBank.PunchRemote:Fire()
+                end)
+            end
+        end
+        task.wait(0.45)
+    end
+end)
+
+--// Auto skill (bấm phím 1-5)
+local SkillKeys = {
+    Enum.KeyCode.One,
+    Enum.KeyCode.Two,
+    Enum.KeyCode.Three,
+    Enum.KeyCode.Four,
+    Enum.KeyCode.Five,
+}
 
 task.spawn(function()
     while alive do
-        if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
-            for _, key in ipairs(CONFIG.SkillKeys) do
-                if not (alive and State.AutoFarm and State.AutoSkill) then
-                    break
+        local entry = currentEntry
+        local root = getRoot()
+        if State.AutoFarm and State.AutoSkill and entry and entry.Root and entry.Root.Parent and root then
+            if (root.Position - entry.Root.Position).Magnitude <= 15 then
+                for _, key in ipairs(SkillKeys) do
+                    if not (alive and State.AutoFarm and State.AutoSkill) then
+                        break
+                    end
+                    VirtualInputManager:SendKeyEvent(true, key, false, game)
+                    task.wait(0.05)
+                    VirtualInputManager:SendKeyEvent(false, key, false, game)
+                    task.wait(State.SkillDelay)
                 end
-                VirtualInputManager:SendKeyEvent(true, key, false, game)
-                task.wait(CONFIG.KeyHold)
-                VirtualInputManager:SendKeyEvent(false, key, false, game)
-                task.wait(0.05)
             end
         end
-        task.wait(CONFIG.SkillInterval)
+        task.wait(0.1)
     end
 end)
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "TrustPremium"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999
-local guiOk = false
+--// ProximityPrompt helpers
+local function promptMatches(prompt, words)
+    local text = string.lower((prompt.ActionText or "") .. " " .. (prompt.ObjectText or "") .. " " .. (prompt.Parent and prompt.Parent.Name or ""))
+    for _, w in ipairs(words) do
+        if string.find(text, w, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function promptPos(prompt)
+    local p = prompt.Parent
+    if not p then
+        return nil
+    end
+    if p:IsA("BasePart") then
+        return p.Position
+    elseif p:IsA("Attachment") then
+        return p.WorldPosition
+    elseif p:IsA("Model") then
+        return p:GetPivot().Position
+    end
+    local part = p:FindFirstAncestorWhichIsA("BasePart")
+    return part and part.Position
+end
+
+local function findPrompt(words, maxDist)
+    local root = getRoot()
+    if not root then
+        return nil, nil
+    end
+    local best, bestDist = nil, maxDist or math.huge
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled and promptMatches(obj, words) then
+            local pos = promptPos(obj)
+            if pos then
+                local d = (root.Position - pos).Magnitude
+                if d < bestDist then
+                    best, bestDist = obj, d
+                end
+            end
+        end
+    end
+    return best, bestDist
+end
+
+local function firePrompt(prompt)
+    if prompt and fireproximityprompt then
+        pcall(fireproximityprompt, prompt)
+    end
+end
+
+--// Auto quest
+task.spawn(function()
+    while alive do
+        if State.AutoQuest then
+            local prompt = findPrompt(QUEST_WORDS, State.QuestRange)
+            if prompt then
+                firePrompt(prompt)
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+--// Player movement
+task.spawn(function()
+    while alive do
+        local hum = getHum()
+        if hum then
+            if State.WalkEnabled then
+                hum.WalkSpeed = State.WalkSpeed
+            end
+            if State.JumpEnabled then
+                hum.UseJumpPower = true
+                hum.JumpPower = State.JumpPower
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
+track(UserInputService.JumpRequest:Connect(function()
+    if State.InfJump then
+        local hum = getHum()
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end))
+
+track(RunService.Stepped:Connect(function()
+    if not State.Noclip then
+        return
+    end
+    local char = getChar()
+    if char then
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") and not farmActive then
+                p.CanCollide = false
+            end
+        end
+    end
+end))
+
+--// ESP
+local function clearESP(model)
+    local e = espObjects[model]
+    if e then
+        pcall(function()
+            e.HL:Destroy()
+        end)
+        pcall(function()
+            e.BB:Destroy()
+        end)
+        espObjects[model] = nil
+    end
+end
+
+local function clearAllESP()
+    for model in pairs(espObjects) do
+        clearESP(model)
+    end
+end
+
+local function ensureESP(model, color)
+    local e = espObjects[model]
+    if e and e.HL.Parent and e.BB.Parent then
+        return e
+    end
+    clearESP(model)
+    local hl = Instance.new("Highlight")
+    hl.FillColor = color
+    hl.OutlineColor = color
+    hl.FillTransparency = 0.6
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = model
+
+    local head = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.fromOffset(170, 40)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
+    bb.AlwaysOnTop = true
+    bb.Adornee = head
+    bb.Parent = model
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.fromScale(1, 1)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = color
+    lbl.TextStrokeTransparency = 0.4
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 12
+    lbl.Parent = bb
+
+    e = {HL = hl, BB = bb, Label = lbl}
+    espObjects[model] = e
+    return e
+end
+
+task.spawn(function()
+    while alive do
+        local active = {}
+        local root = getRoot()
+        if State.ESPPlayers then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                local char = plr.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local pRoot = char and char:FindFirstChild("HumanoidRootPart")
+                local skip = plr == LocalPlayer
+                    or not hum or not pRoot
+                    or (State.HideTeammates and plr.Team ~= nil and plr.Team == LocalPlayer.Team)
+                if not skip then
+                    active[char] = true
+                    local e = ensureESP(char, Color3.fromRGB(80, 200, 255))
+                    local dist = root and math.floor((root.Position - pRoot.Position).Magnitude) or 0
+                    e.Label.Text = string.format("%s [%dm] HP %d", plr.Name, dist, math.floor(hum.Health))
+                end
+            end
+        end
+        if State.ESPEnemies then
+            for _, entry in ipairs(scanEnemies(State.ESPRange)) do
+                active[entry.Model] = true
+                local e = ensureESP(entry.Model, Color3.fromRGB(255, 150, 60))
+                e.Label.Text = string.format("%s [%dm] HP %d", entry.Model.Name, math.floor(entry.Dist), math.floor(entry.Hum.Health))
+            end
+        end
+        for model in pairs(espObjects) do
+            if not active[model] or not model.Parent then
+                clearESP(model)
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+--// Anti AFK
+track(LocalPlayer.Idled:Connect(function()
+    if State.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end))
+
+--// Server utils
+local function serverHop()
+    if not request then
+        notify("Server", "Executor không hỗ trợ request")
+        return
+    end
+    local ok, res = pcall(request, {
+        Url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100", game.PlaceId),
+        Method = "GET",
+    })
+    if not ok or not res or not res.Body then
+        notify("Server", "Không lấy được danh sách server")
+        return
+    end
+    local decoded, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
+    if not decoded or type(data) ~= "table" then
+        notify("Server", "Dữ liệu server lỗi")
+        return
+    end
+    local candidates = {}
+    for _, s in ipairs(data.data or {}) do
+        if s.id ~= game.JobId and s.playing < s.maxPlayers then
+            table.insert(candidates, s.id)
+        end
+    end
+    if #candidates == 0 then
+        notify("Server", "Không có server phù hợp")
+        return
+    end
+    TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[math.random(#candidates)], LocalPlayer)
+end
+
+local function rejoin()
+    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+end
+
+--// Webhook
+local function sendWebhook(content)
+    if not request or State.WebhookURL == "" then
+        return false
+    end
+    local payload = {
+        username = "Darkwen",
+        embeds = {{
+            title = "Darkwen | Anime CardVerse",
+            description = content,
+            color = 9127167,
+            timestamp = DateTime.now():ToIsoDate(),
+        }},
+    }
+    local ok = pcall(request, {
+        Url = State.WebhookURL,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode(payload),
+    })
+    return ok
+end
+
+local function buildStatus()
+    local lines = {"Người chơi: " .. LocalPlayer.Name}
+    local stats = LocalPlayer:FindFirstChild("leaderstats")
+    if stats then
+        for _, v in ipairs(stats:GetChildren()) do
+            if v:IsA("ValueBase") then
+                table.insert(lines, v.Name .. ": " .. tostring(v.Value))
+            end
+        end
+    end
+    table.insert(lines, "Map: " .. tostring(LocalPlayer:GetAttribute("CurrentMap") or "Không rõ"))
+    return table.concat(lines, "\n")
+end
+
+task.spawn(function()
+    local last = 0
+    while alive do
+        if State.WebhookOn and os.clock() - last >= State.WebhookInterval then
+            last = os.clock()
+            sendWebhook(buildStatus())
+        end
+        task.wait(1)
+    end
+end)
+
+--// Map helpers
+local function getMapFolder()
+    for _, name in ipairs(MAP_FOLDER_NAMES) do
+        local folder = Workspace:FindFirstChild(name)
+        if folder and #folder:GetChildren() > 0 then
+            return folder
+        end
+    end
+    return nil
+end
+
+local function listMaps()
+    local list = {ALL_LABEL}
+    local folder = getMapFolder()
+    if folder then
+        local names = {}
+        for _, child in ipairs(folder:GetChildren()) do
+            if child:IsA("Model") or child:IsA("Folder") then
+                table.insert(names, child.Name)
+            end
+        end
+        table.sort(names)
+        for _, n in ipairs(names) do
+            table.insert(list, n)
+        end
+    end
+    return list
+end
+
+local function listPlayers()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    return list
+end
+
+--// Window
+local camera = Workspace.CurrentCamera or Workspace:WaitForChild("CurrentCamera")
+local isSmall = camera.ViewportSize.X < 800
+
+Window = Fluent:CreateWindow({
+    Title = "Darkwen",
+    SubTitle = "Anime CardVerse",
+    TabWidth = isSmall and 110 or 140,
+    Size = isSmall and UDim2.fromOffset(480, 340) or UDim2.fromOffset(580, 420),
+    Acrylic = false,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.RightControl,
+})
+
+local Tabs = {
+    Main = Window:AddTab({Title = "Main"}),
+    Quest = Window:AddTab({Title = "Quest"}),
+    Player = Window:AddTab({Title = "Player"}),
+    ESP = Window:AddTab({Title = "ESP"}),
+    Misc = Window:AddTab({Title = "Misc"}),
+    Shop = Window:AddTab({Title = "Shop"}),
+    Server = Window:AddTab({Title = "Server"}),
+    Teleport = Window:AddTab({Title = "Teleport"}),
+    Webhook = Window:AddTab({Title = "Webhook"}),
+    Settings = Window:AddTab({Title = "Settings"}),
+}
+
+local Options = Fluent.Options
+
+--// Main
+Tabs.Main:AddParagraph({
+    Title = "Auto Farm",
+    Content = "Khóa vị trí trên quái gần nhất trong phạm vi phát hiện. Đặt khoảng cách và kiểu farm bên dưới.",
+})
+Tabs.Main:AddToggle("AutoFarm", {
+    Title = "Bật Auto Farm",
+    Default = false,
+    Callback = function(v)
+        State.AutoFarm = v
+        if not v then
+            setFarmHold(false)
+        end
+    end,
+})
+Tabs.Main:AddDropdown("FarmMode", {
+    Title = "Kiểu farm",
+    Values = FARM_MODES,
+    Multi = false,
+    Default = MODE_TOP,
+    Callback = function(v)
+        State.FarmMode = v
+    end,
+})
+Tabs.Main:AddSlider("FarmDistance", {
+    Title = "Khoảng cách farm",
+    Default = 7,
+    Min = 1,
+    Max = 20,
+    Rounding = 0,
+    Callback = function(v)
+        State.FarmDistance = v
+    end,
+})
+Tabs.Main:AddSlider("DetectRange", {
+    Title = "Phạm vi phát hiện quái",
+    Default = 300,
+    Min = 50,
+    Max = 1000,
+    Rounding = 0,
+    Callback = function(v)
+        State.DetectRange = v
+    end,
+})
+Tabs.Main:AddToggle("AutoSkill", {
+    Title = "Auto Skill (1-5)",
+    Default = true,
+    Callback = function(v)
+        State.AutoSkill = v
+    end,
+})
+Tabs.Main:AddSlider("SkillDelay", {
+    Title = "Delay giữa các skill",
+    Default = 0.3,
+    Min = 0.1,
+    Max = 2,
+    Rounding = 1,
+    Callback = function(v)
+        State.SkillDelay = v
+    end,
+})
+Tabs.Main:AddToggle("AutoMelee", {
+    Title = "Đánh thường tự động",
+    Default = true,
+    Callback = function(v)
+        State.AutoMelee = v
+    end,
+})
+
+--// Quest
+Tabs.Quest:AddToggle("AutoQuest", {
+    Title = "Auto nhận quest gần",
+    Default = false,
+    Callback = function(v)
+        State.AutoQuest = v
+    end,
+})
+Tabs.Quest:AddSlider("QuestRange", {
+    Title = "Phạm vi quest",
+    Default = 25,
+    Min = 5,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(v)
+        State.QuestRange = v
+    end,
+})
+Tabs.Quest:AddButton({
+    Title = "Tới NPC quest gần nhất",
+    Callback = function()
+        local prompt, dist = findPrompt(QUEST_WORDS)
+        if prompt then
+            tpTo(promptPos(prompt))
+            notify("Quest", string.format("Đã tới NPC cách %d studs", math.floor(dist)))
+        else
+            notify("Quest", "Không tìm thấy NPC quest")
+        end
+    end,
+})
+Tabs.Quest:AddButton({
+    Title = "Nhận quest ngay",
+    Callback = function()
+        local prompt = findPrompt(QUEST_WORDS, State.QuestRange)
+        if prompt then
+            firePrompt(prompt)
+        else
+            notify("Quest", "Không có NPC quest trong phạm vi")
+        end
+    end,
+})
+
+--// Player
+Tabs.Player:AddToggle("WalkEnabled", {
+    Title = "Bật tốc độ",
+    Default = false,
+    Callback = function(v)
+        State.WalkEnabled = v
+        if not v then
+            local hum = getHum()
+            if hum then
+                hum.WalkSpeed = 16
+            end
+        end
+    end,
+})
+Tabs.Player:AddSlider("WalkSpeed", {
+    Title = "Tốc độ đi",
+    Default = 16,
+    Min = 16,
+    Max = 250,
+    Rounding = 0,
+    Callback = function(v)
+        State.WalkSpeed = v
+    end,
+})
+Tabs.Player:AddToggle("JumpEnabled", {
+    Title = "Bật lực nhảy",
+    Default = false,
+    Callback = function(v)
+        State.JumpEnabled = v
+    end,
+})
+Tabs.Player:AddSlider("JumpPower", {
+    Title = "Lực nhảy",
+    Default = 50,
+    Min = 50,
+    Max = 300,
+    Rounding = 0,
+    Callback = function(v)
+        State.JumpPower = v
+    end,
+})
+Tabs.Player:AddToggle("InfJump", {
+    Title = "Nhảy vô hạn",
+    Default = false,
+    Callback = function(v)
+        State.InfJump = v
+    end,
+})
+Tabs.Player:AddToggle("Noclip", {
+    Title = "Noclip",
+    Default = false,
+    Callback = function(v)
+        State.Noclip = v
+        if not v then
+            local char = getChar()
+            if char then
+                for _, p in ipairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then
+                        p.CanCollide = true
+                    end
+                end
+            end
+        end
+    end,
+})
+
+--// ESP
+Tabs.ESP:AddToggle("ESPPlayers", {
+    Title = "ESP người chơi",
+    Default = false,
+    Callback = function(v)
+        State.ESPPlayers = v
+        if not v and not State.ESPEnemies then
+            clearAllESP()
+        end
+    end,
+})
+Tabs.ESP:AddToggle("ESPEnemies", {
+    Title = "ESP quái",
+    Default = false,
+    Callback = function(v)
+        State.ESPEnemies = v
+        if not v and not State.ESPPlayers then
+            clearAllESP()
+        end
+    end,
+})
+Tabs.ESP:AddToggle("HideTeammates", {
+    Title = "Ẩn đồng đội",
+    Default = true,
+    Callback = function(v)
+        State.HideTeammates = v
+    end,
+})
+Tabs.ESP:AddSlider("ESPRange", {
+    Title = "Phạm vi ESP quái",
+    Default = 500,
+    Min = 100,
+    Max = 2000,
+    Rounding = 0,
+    Callback = function(v)
+        State.ESPRange = v
+    end,
+})
+
+--// Misc
+Tabs.Misc:AddToggle("AntiAFK", {
+    Title = "Anti AFK",
+    Default = true,
+    Callback = function(v)
+        State.AntiAFK = v
+    end,
+})
+Tabs.Misc:AddButton({
+    Title = "Rejoin",
+    Callback = rejoin,
+})
+Tabs.Misc:AddButton({
+    Title = "Copy Job ID",
+    Callback = function()
+        if setclipboard then
+            setclipboard(game.JobId)
+            notify("Misc", "Đã copy Job ID")
+        end
+    end,
+})
+Tabs.Misc:AddButton({
+    Title = "Đặt lại nhân vật",
+    Callback = function()
+        local hum = getHum()
+        if hum then
+            hum.Health = 0
+        end
+    end,
+})
+
+--// Shop
+Tabs.Shop:AddButton({
+    Title = "Tới shop gần nhất",
+    Callback = function()
+        local prompt, dist = findPrompt(SHOP_WORDS)
+        if prompt then
+            tpTo(promptPos(prompt))
+            notify("Shop", string.format("Đã tới shop cách %d studs", math.floor(dist)))
+        else
+            notify("Shop", "Không tìm thấy shop")
+        end
+    end,
+})
+Tabs.Shop:AddButton({
+    Title = "Mở shop gần nhất",
+    Callback = function()
+        local prompt = findPrompt(SHOP_WORDS)
+        if prompt then
+            firePrompt(prompt)
+        else
+            notify("Shop", "Không tìm thấy shop")
+        end
+    end,
+})
+
+--// Server
+Tabs.Server:AddButton({
+    Title = "Server hop",
+    Callback = serverHop,
+})
+Tabs.Server:AddInput("JobIdInput", {
+    Title = "Job ID",
+    Default = "",
+    Placeholder = "Dán Job ID vào đây",
+    Numeric = false,
+    Finished = true,
+    Callback = function(v)
+        if v ~= "" then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, v, LocalPlayer)
+        end
+    end,
+})
+Tabs.Server:AddButton({
+    Title = "Rejoin server hiện tại",
+    Callback = rejoin,
+})
+
+--// Teleport
+Tabs.Teleport:AddDropdown("TeleportMap", {
+    Title = "Chọn map",
+    Values = listMaps(),
+    Multi = false,
+    Default = ALL_LABEL,
+    Callback = function(v)
+        State.TeleportMap = (v ~= ALL_LABEL) and v or nil
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Làm mới danh sách map",
+    Callback = function()
+        Options.TeleportMap:SetValues(listMaps())
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Teleport tới map",
+    Callback = function()
+        local folder = getMapFolder()
+        local target = State.TeleportMap and folder and folder:FindFirstChild(State.TeleportMap)
+        if target then
+            tpTo(target:GetPivot().Position)
+        else
+            notify("Teleport", "Chưa chọn map hợp lệ")
+        end
+    end,
+})
+Tabs.Teleport:AddDropdown("TeleportPlayer", {
+    Title = "Chọn người chơi",
+    Values = listPlayers(),
+    Multi = false,
+    Default = "",
+    Callback = function(v)
+        State.TeleportPlayer = v
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Làm mới danh sách người chơi",
+    Callback = function()
+        Options.TeleportPlayer:SetValues(listPlayers())
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Teleport tới người chơi",
+    Callback = function()
+        local plr = State.TeleportPlayer and Players:FindFirstChild(State.TeleportPlayer)
+        local r = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if r then
+            tpTo(r.Position)
+        else
+            notify("Teleport", "Không tìm thấy người chơi")
+        end
+    end,
+})
+
+track(Players.PlayerAdded:Connect(function()
+    if Options.TeleportPlayer then
+        Options.TeleportPlayer:SetValues(listPlayers())
+    end
+end))
+track(Players.PlayerRemoving:Connect(function()
+    task.defer(function()
+        if Options.TeleportPlayer then
+            Options.TeleportPlayer:SetValues(listPlayers())
+        end
+    end)
+end))
+
+--// Webhook
+Tabs.Webhook:AddInput("WebhookURL", {
+    Title = "Webhook URL",
+    Default = "",
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Numeric = false,
+    Finished = true,
+    Callback = function(v)
+        State.WebhookURL = v
+    end,
+})
+Tabs.Webhook:AddToggle("WebhookOn", {
+    Title = "Gửi định kỳ",
+    Default = false,
+    Callback = function(v)
+        State.WebhookOn = v
+    end,
+})
+Tabs.Webhook:AddSlider("WebhookInterval", {
+    Title = "Chu kỳ (giây)",
+    Default = 60,
+    Min = 30,
+    Max = 600,
+    Rounding = 0,
+    Callback = function(v)
+        State.WebhookInterval = v
+    end,
+})
+Tabs.Webhook:AddButton({
+    Title = "Gửi thử",
+    Callback = function()
+        if sendWebhook(buildStatus()) then
+            notify("Webhook", "Đã gửi")
+        else
+            notify("Webhook", "Gửi thất bại, kiểm tra URL hoặc executor")
+        end
+    end,
+})
+
+--// Settings
+Tabs.Settings:AddDropdown("Theme", {
+    Title = "Giao diện",
+    Values = THEMES,
+    Multi = false,
+    Default = "Darker",
+    Callback = function(v)
+        Fluent:SetTheme(v)
+    end,
+})
+Tabs.Settings:AddKeybind("MenuKey", {
+    Title = "Phím ẩn/hiện menu",
+    Mode = "Toggle",
+    Default = "RightControl",
+    Callback = function()
+        pcall(function()
+            Window:Minimize()
+        end)
+    end,
+})
+
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:SetIgnoreIndexes({"JobIdInput", "WebhookURL", "TeleportMap", "TeleportPlayer"})
+InterfaceManager:SetFolder("DarkwenCV")
+SaveManager:SetFolder("DarkwenCV/configs")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+pcall(function()
+    SaveManager:LoadAutoloadConfig()
+end)
+
+Window:SelectTab(1)
+
+--// Nút nổi cho mobile
+local floatHolder = Instance.new("ScreenGui")
+floatHolder.Name = "DarkwenFloat"
+floatHolder.ResetOnSpawn = false
+floatHolder.DisplayOrder = 1000
+local floatOk = false
 if gethui then
-    guiOk = pcall(function()
-        gui.Parent = gethui()
+    floatOk = pcall(function()
+        floatHolder.Parent = gethui()
     end)
 end
-if not guiOk or not gui.Parent then
-    local ok = pcall(function()
-        gui.Parent = CoreGui
+if not floatOk or not floatHolder.Parent then
+    if not pcall(function()
+        floatHolder.Parent = CoreGui
+    end) or not floatHolder.Parent then
+        floatHolder.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+end
+floatGui = floatHolder
+
+local floatBtn = Instance.new("TextButton")
+floatBtn.Size = UDim2.fromOffset(44, 44)
+floatBtn.Position = UDim2.new(0, 10, 0.5, -22)
+floatBtn.BackgroundColor3 = Color3.fromRGB(140, 90, 255)
+floatBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+floatBtn.Font = Enum.Font.GothamBold
+floatBtn.TextSize = 18
+floatBtn.Text = "D"
+floatBtn.BorderSizePixel = 0
+floatBtn.AutoButtonColor = false
+floatBtn.Parent = floatHolder
+local floatCorner = Instance.new("UICorner")
+floatCorner.CornerRadius = UDim.new(1, 0)
+floatCorner.Parent = floatBtn
+
+track(floatBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        Window:Minimize()
     end)
-    if not ok or not gui.Parent then
-        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    end
-end
+end))
 
-local function makeToggle(name, y, default, onChange)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = UDim2.fromOffset(160, 36)
-    btn.Position = UDim2.new(0.5, -80, 0, y)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 16
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.Parent = gui
-
-    local value = default
-    local function render()
-        btn.Text = name .. ": " .. (value and "ON" or "OFF")
-        btn.BackgroundColor3 = value and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-    end
-    render()
-
-    track(btn.MouseButton1Click:Connect(function()
-        value = not value
-        render()
-        onChange(value)
-    end))
-    return btn
-end
-
-makeToggle("AutoFarm", 10, false, function(v)
-    State.AutoFarm = v
-end)
-makeToggle("AutoSkill", 54, true, function(v)
-    State.AutoSkill = v
-end)
-
-if not originalGetTarget then
-    warn("[TrustPremium] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
-end
-
-env.TrustPremiumCleanup = function()
+--// Cleanup
+env.DarkwenFluentCleanup = function()
     alive = false
     State.AutoFarm = false
+    State.AutoQuest = false
+    State.WebhookOn = false
+    State.Noclip = false
+    State.InfJump = false
+    setFarmHold(false)
+    clearAllESP()
+
     if originalGetTarget and type(MouseUtil) == "table" then
         MouseUtil.GetTarget = originalGetTarget
     end
+
     for _, conn in ipairs(Connections) do
         pcall(function()
             conn:Disconnect()
         end)
     end
     table.clear(Connections)
-    if gui then
-        gui:Destroy()
+
+    local hum = getHum()
+    if hum then
+        hum.WalkSpeed = 16
+        hum.PlatformStand = false
     end
-    env.TrustPremiumCleanup = nil
+
+    if floatGui then
+        pcall(function()
+            floatGui:Destroy()
+        end)
+    end
+    if Window then
+        pcall(function()
+            Fluent:Destroy()
+        end)
+    end
+    env.DarkwenFluentCleanup = nil
 end
