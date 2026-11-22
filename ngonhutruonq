@@ -10,8 +10,8 @@ local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
     HeightOffset = 8,
-    MaxRange = 500,
-    SkillRange = 20,
+    MaxRange = ,700,
+    SkillRange = 25,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -127,13 +127,15 @@ track(RunService.RenderStepped:Connect(function()
     local target = currentTarget
     
     if root and target and target.Parent then
-        local targetXZ = Vector3.new(target.Position.X, root.Position.Y, target.Position.Z)
-        local lookAt = Vector3.new(target.Position.X, root.Position.Y, target.Position.Z)
+        local destX = target.Position.X
+        local destZ = target.Position.Z
+        local destY = root.Position.Y
         
-        local currentCFrame = root.CFrame
-        local targetCFrame = CFrame.new(targetXZ, lookAt)
+        local destPos = Vector3.new(destX, destY, destZ)
+        local lookAt = Vector3.new(destX, destY - 1, destZ)
         
-        root.CFrame = currentCFrame:Lerp(targetCFrame, 0.2)
+        local targetCFrame = CFrame.new(destPos, lookAt)
+        root.CFrame = root.CFrame:Lerp(targetCFrame, 0.2)
     end
 end))
 
