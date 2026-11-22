@@ -19,17 +19,17 @@ local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.
 
 local request = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
 
-local MODE_TOP = "Trên đầu"
-local MODE_BOTTOM = "Dưới chân"
-local MODE_BACK = "Sau lưng"
-local MODE_FRONT = "Trước mặt"
+local MODE_TOP = "Above Head"
+local MODE_BOTTOM = "Below Feet"
+local MODE_BACK = "Behind"
+local MODE_FRONT = "In Front"
 local FARM_MODES = {MODE_TOP, MODE_BOTTOM, MODE_BACK, MODE_FRONT}
 local MAP_FOLDER_NAMES = {"Maps", "Map", "Worlds", "World", "Stages", "Areas"}
 local SUMMON_WORDS = {"pet", "summon", "clone", "minion"}
-local QUEST_WORDS = {"quest", "nhiệm vụ", "nhiem vu"}
-local SHOP_WORDS = {"shop", "cửa hàng", "cua hang"}
+local QUEST_WORDS = {"quest", "mission", "task"}
+local SHOP_WORDS = {"shop", "store", "market"}
 local THEMES = {"Dark", "Darker", "Light", "Aqua", "Amethyst"}
-local ALL_LABEL = "Tất cả"
+local ALL_LABEL = "All"
 
 local State = {
     AutoFarm = false,
@@ -495,7 +495,7 @@ end))
 
 local function serverHop()
     if not request then
-        notify("Server", "Executor không hỗ trợ request")
+        notify("Server", "Executor does not support request")
         return
     end
     local ok, res = pcall(request, {
@@ -503,12 +503,12 @@ local function serverHop()
         Method = "GET",
     })
     if not ok or not res or not res.Body then
-        notify("Server", "Không lấy được danh sách server")
+        notify("Server", "Failed to fetch server list")
         return
     end
     local decoded, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
     if not decoded or type(data) ~= "table" then
-        notify("Server", "Dữ liệu server lỗi")
+        notify("Server", "Invalid server data")
         return
     end
     local candidates = {}
@@ -518,7 +518,7 @@ local function serverHop()
         end
     end
     if #candidates == 0 then
-        notify("Server", "Không có server phù hợp")
+        notify("Server", "No suitable server found")
         return
     end
     TeleportService:TeleportToPlaceInstance(game.PlaceId, candidates[math.random(#candidates)], LocalPlayer)
@@ -551,7 +551,7 @@ local function sendWebhook(content)
 end
 
 local function buildStatus()
-    local lines = {"Người chơi: " .. LocalPlayer.Name}
+    local lines = {"Player: " .. LocalPlayer.Name}
     local stats = LocalPlayer:FindFirstChild("leaderstats")
     if stats then
         for _, v in ipairs(stats:GetChildren()) do
@@ -560,7 +560,7 @@ local function buildStatus()
             end
         end
     end
-    table.insert(lines, "Map: " .. tostring(LocalPlayer:GetAttribute("CurrentMap") or "Không rõ"))
+    table.insert(lines, "Map: " .. tostring(LocalPlayer:GetAttribute("CurrentMap") or "Unknown"))
     return table.concat(lines, "\n")
 end
 
@@ -626,24 +626,26 @@ Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.RightControl,
 })
 
+--// TAB ORDER: Main, Quest, Shop, Teleport, Player, ESP, Misc, Server, Webhook, Settings
 local Tabs = {
     Main = Window:AddTab({Title = "Main"}),
     Quest = Window:AddTab({Title = "Quest"}),
+    Shop = Window:AddTab({Title = "Shop"}),
+    Teleport = Window:AddTab({Title = "Teleport"}),
     Player = Window:AddTab({Title = "Player"}),
     ESP = Window:AddTab({Title = "ESP"}),
     Misc = Window:AddTab({Title = "Misc"}),
-    Shop = Window:AddTab({Title = "Shop"}),
     Server = Window:AddTab({Title = "Server"}),
-    Teleport = Window:AddTab({Title = "Teleport"}),
     Webhook = Window:AddTab({Title = "Webhook"}),
     Settings = Window:AddTab({Title = "Settings"}),
 }
 
 local Options = Fluent.Options
 
+--// ===== MAIN =====
 Tabs.Main:AddParagraph({
     Title = "Auto Farm",
-    Content = "Khóa vị trí trên quái gần nhất trong phạm vi phát hiện. Đặt khoảng cách và kiểu farm bên dưới.",
+    Content = "Locks position on the nearest enemy within detection range. Set distance and farm mode below.",
 })
 Tabs.Main:AddToggle("AutoFarm", {
     Title = "Auto Farm",
@@ -656,7 +658,7 @@ Tabs.Main:AddToggle("AutoFarm", {
     end,
 })
 Tabs.Main:AddDropdown("FarmMode", {
-    Title = "FramMode",
+    Title = "Farm Mode",
     Values = FARM_MODES,
     Multi = false,
     Default = MODE_TOP,
@@ -665,7 +667,7 @@ Tabs.Main:AddDropdown("FarmMode", {
     end,
 })
 Tabs.Main:AddSlider("FarmDistance", {
-    Title = "FarmDistance",
+    Title = "Farm Distance",
     Default = 7,
     Min = 1,
     Max = 20,
@@ -675,7 +677,7 @@ Tabs.Main:AddSlider("FarmDistance", {
     end,
 })
 Tabs.Main:AddSlider("DetectRange", {
-    Title = "DetectRange",
+    Title = "Detect Range",
     Default = 300,
     Min = 50,
     Max = 1000,
@@ -709,8 +711,9 @@ Tabs.Main:AddToggle("AutoMelee", {
     end,
 })
 
+--// ===== QUEST =====
 Tabs.Quest:AddToggle("AutoQuest", {
-    Title = "Auto nhận quest gần",
+    Title = "Auto accept nearby quest",
     Default = false,
     Callback = function(v)
         State.AutoQuest = v
@@ -727,31 +730,113 @@ Tabs.Quest:AddSlider("QuestRange", {
     end,
 })
 Tabs.Quest:AddButton({
-    Title = "Tới NPC quest gần nhất",
+    Title = "Go to nearest quest NPC",
     Callback = function()
         local prompt, dist = findPrompt(QUEST_WORDS)
         if prompt then
             tpTo(promptPos(prompt))
-            notify("Quest", string.format("Đã tới NPC cách %d studs", math.floor(dist)))
+            notify("Quest", string.format("Arrived at NPC, %d studs away", math.floor(dist)))
         else
-            notify("Quest", "Không tìm thấy NPC quest")
+            notify("Quest", "Quest NPC not found")
         end
     end,
 })
 Tabs.Quest:AddButton({
-    Title = "Auto Quest",
+    Title = "Accept quest now",
     Callback = function()
         local prompt = findPrompt(QUEST_WORDS, State.QuestRange)
         if prompt then
             firePrompt(prompt)
         else
-            notify("Quest", "Không có NPC quest trong phạm vi")
+            notify("Quest", "No quest NPC in range")
         end
     end,
 })
 
+--// ===== SHOP =====
+Tabs.Shop:AddButton({
+    Title = "Go to nearest shop",
+    Callback = function()
+        local prompt, dist = findPrompt(SHOP_WORDS)
+        if prompt then
+            tpTo(promptPos(prompt))
+            notify("Shop", string.format("Arrived at shop, %d studs away", math.floor(dist)))
+        else
+            notify("Shop", "Shop not found")
+        end
+    end,
+})
+Tabs.Shop:AddButton({
+    Title = "Open nearest shop",
+    Callback = function()
+        local prompt = findPrompt(SHOP_WORDS)
+        if prompt then
+            firePrompt(prompt)
+        else
+            notify("Shop", "Shop not found")
+        end
+    end,
+})
+
+--// ===== TELEPORT =====
+Tabs.Teleport:AddDropdown("TeleportMap", {
+    Title = "Select Map",
+    Values = listMaps(),
+    Multi = false,
+    Default = ALL_LABEL,
+    Callback = function(v)
+        State.TeleportMap = (v ~= ALL_LABEL) and v or nil
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Refresh map list",
+    Callback = function()
+        Options.TeleportMap:SetValues(listMaps())
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Teleport to map",
+    Callback = function()
+        local folder = getMapFolder()
+        local target = State.TeleportMap and folder and folder:FindFirstChild(State.TeleportMap)
+        if target then
+            tpTo(target:GetPivot().Position)
+        else
+            notify("Teleport", "No valid map selected")
+        end
+    end,
+})
+Tabs.Teleport:AddDropdown("TeleportPlayer", {
+    Title = "Teleport Player",
+    Values = listPlayers(),
+    Multi = false,
+    Default = "",
+    Callback = function(v)
+        State.TeleportPlayer = v
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Refresh player list",
+    Callback = function()
+        Options.TeleportPlayer:SetValues(listPlayers())
+    end,
+})
+Tabs.Teleport:AddButton({
+    Title = "Teleport to player",
+    Callback = function()
+        local plr = State.TeleportPlayer and Players:FindFirstChild(State.TeleportPlayer)
+        local r = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if r then
+            tpTo(r.Position)
+        else
+            notify("Teleport", "Player not found")
+        end
+    end,
+})
+
+--// ===== PLAYER =====
 Tabs.Player:AddToggle("WalkEnabled", {
-    Title = "WalkEnabled",
+    Title = "Enable WalkSpeed",
     Default = false,
     Callback = function(v)
         State.WalkEnabled = v
@@ -774,14 +859,14 @@ Tabs.Player:AddSlider("WalkSpeed", {
     end,
 })
 Tabs.Player:AddToggle("JumpEnabled", {
-    Title = "JumpEnabled",
+    Title = "Enable JumpPower",
     Default = false,
     Callback = function(v)
         State.JumpEnabled = v
     end,
 })
 Tabs.Player:AddSlider("JumpPower", {
-    Title = "JupPower",
+    Title = "JumpPower",
     Default = 50,
     Min = 50,
     Max = 300,
@@ -791,7 +876,7 @@ Tabs.Player:AddSlider("JumpPower", {
     end,
 })
 Tabs.Player:AddToggle("InfJump", {
-    Title = "InfJump",
+    Title = "Infinite Jump",
     Default = false,
     Callback = function(v)
         State.InfJump = v
@@ -815,6 +900,7 @@ Tabs.Player:AddToggle("NoClip", {
     end,
 })
 
+--// ===== ESP =====
 Tabs.ESP:AddToggle("ESPPlayers", {
     Title = "ESP Players",
     Default = false,
@@ -836,7 +922,7 @@ Tabs.ESP:AddToggle("ESPEnemies", {
     end,
 })
 Tabs.ESP:AddToggle("HideTeammates", {
-    Title = "HideTeammates",
+    Title = "Hide Teammates",
     Default = true,
     Callback = function(v)
         State.HideTeammates = v
@@ -853,6 +939,7 @@ Tabs.ESP:AddSlider("ESPRange", {
     end,
 })
 
+--// ===== MISC =====
 Tabs.Misc:AddToggle("AntiAFK", {
     Title = "Anti AFK",
     Default = true,
@@ -869,12 +956,12 @@ Tabs.Misc:AddButton({
     Callback = function()
         if setclipboard then
             setclipboard(game.JobId)
-            notify("Misc", "Đã copy Job ID")
+            notify("Misc", "Job ID copied")
         end
     end,
 })
 Tabs.Misc:AddButton({
-    Title = "Reset",
+    Title = "Reset Character",
     Callback = function()
         local hum = getHum()
         if hum then
@@ -883,30 +970,7 @@ Tabs.Misc:AddButton({
     end,
 })
 
-Tabs.Shop:AddButton({
-    Title = "Tới shop gần nhất",
-    Callback = function()
-        local prompt, dist = findPrompt(SHOP_WORDS)
-        if prompt then
-            tpTo(promptPos(prompt))
-            notify("Shop", string.format("Đã tới shop cách %d studs", math.floor(dist)))
-        else
-            notify("Shop", "Không tìm thấy shop")
-        end
-    end,
-})
-Tabs.Shop:AddButton({
-    Title = "Mở shop gần nhất",
-    Callback = function()
-        local prompt = findPrompt(SHOP_WORDS)
-        if prompt then
-            firePrompt(prompt)
-        else
-            notify("Shop", "Không tìm thấy shop")
-        end
-    end,
-})
-
+--// ===== SERVER =====
 Tabs.Server:AddButton({
     Title = "Server Hop",
     Callback = serverHop,
@@ -914,7 +978,7 @@ Tabs.Server:AddButton({
 Tabs.Server:AddInput("JobIdInput", {
     Title = "Job ID",
     Default = "",
-    Placeholder = "Dán Job ID vào đây",
+    Placeholder = "Paste Job ID here",
     Numeric = false,
     Finished = true,
     Callback = function(v)
@@ -924,62 +988,67 @@ Tabs.Server:AddInput("JobIdInput", {
     end,
 })
 Tabs.Server:AddButton({
-    Title = "Rejoin server hiện tại",
+    Title = "Rejoin current server",
     Callback = rejoin,
 })
 
-Tabs.Teleport:AddDropdown("TeleportMap", {
-    Title = "Chọn map",
-    Values = listMaps(),
-    Multi = false,
-    Default = ALL_LABEL,
-    Callback = function(v)
-        State.TeleportMap = (v ~= ALL_LABEL) and v or nil
-    end,
-})
-Tabs.Teleport:AddButton({
-    Title = "Làm mới danh sách map",
-    Callback = function()
-        Options.TeleportMap:SetValues(listMaps())
-    end,
-})
-Tabs.Teleport:AddButton({
-    Title = "Teleport tới map",
-    Callback = function()
-        local folder = getMapFolder()
-        local target = State.TeleportMap and folder and folder:FindFirstChild(State.TeleportMap)
-        if target then
-            tpTo(target:GetPivot().Position)
-        else
-            notify("Teleport", "Chưa chọn map hợp lệ")
-        end
-    end,
-})
-Tabs.Teleport:AddDropdown("TeleportPlayer", {
-    Title = "Teleport Player",
-    Values = listPlayers(),
-    Multi = false,
+--// ===== WEBHOOK =====
+Tabs.Webhook:AddInput("WebhookURL", {
+    Title = "Webhook URL",
     Default = "",
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Numeric = false,
+    Finished = true,
     Callback = function(v)
-        State.TeleportPlayer = v
+        State.WebhookURL = v
     end,
 })
-Tabs.Teleport:AddButton({
-    Title = "Reset Players",
-    Callback = function()
-        Options.TeleportPlayer:SetValues(listPlayers())
+Tabs.Webhook:AddToggle("WebhookOn", {
+    Title = "Send periodically",
+    Default = false,
+    Callback = function(v)
+        State.WebhookOn = v
     end,
 })
-Tabs.Teleport:AddButton({
-    Title = "Teleport Player",
+Tabs.Webhook:AddSlider("WebhookInterval", {
+    Title = "Interval (seconds)",
+    Default = 60,
+    Min = 30,
+    Max = 600,
+    Rounding = 0,
+    Callback = function(v)
+        State.WebhookInterval = v
+    end,
+})
+Tabs.Webhook:AddButton({
+    Title = "Test Webhook",
     Callback = function()
-        local plr = State.TeleportPlayer and Players:FindFirstChild(State.TeleportPlayer)
-        local r = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-        if r then
-            tpTo(r.Position)
+        if sendWebhook(buildStatus()) then
+            notify("Webhook", "Sent")
         else
-            notify("Teleport", "Không tìm thấy người chơi")
+            notify("Webhook", "Send failed, check URL or executor")
         end
+    end,
+})
+
+--// ===== SETTINGS =====
+Tabs.Settings:AddDropdown("Theme", {
+    Title = "Theme",
+    Values = THEMES,
+    Multi = false,
+    Default = "Darker",
+    Callback = function(v)
+        Fluent:SetTheme(v)
+    end,
+})
+Tabs.Settings:AddKeybind("MenuKey", {
+    Title = "Menu toggle key",
+    Mode = "Toggle",
+    Default = "RightControl",
+    Callback = function()
+        pcall(function()
+            Window:Minimize()
+        end)
     end,
 })
 
@@ -995,64 +1064,6 @@ track(Players.PlayerRemoving:Connect(function()
         end
     end)
 end))
-
-Tabs.Webhook:AddInput("WebhookURL", {
-    Title = "Webhook URL",
-    Default = "",
-    Placeholder = "https://discord.com/api/webhooks/...",
-    Numeric = false,
-    Finished = true,
-    Callback = function(v)
-        State.WebhookURL = v
-    end,
-})
-Tabs.Webhook:AddToggle("WebhookOn", {
-    Title = "Gửi định kỳ",
-    Default = false,
-    Callback = function(v)
-        State.WebhookOn = v
-    end,
-})
-Tabs.Webhook:AddSlider("WebhookInterval", {
-    Title = "Time",
-    Default = 60,
-    Min = 30,
-    Max = 600,
-    Rounding = 0,
-    Callback = function(v)
-        State.WebhookInterval = v
-    end,
-})
-Tabs.Webhook:AddButton({
-    Title = "Text Webhook",
-    Callback = function()
-        if sendWebhook(buildStatus()) then
-            notify("Webhook", "Đã gửi")
-        else
-            notify("Webhook", "Gửi thất bại, kiểm tra URL hoặc executor")
-        end
-    end,
-})
-
-Tabs.Settings:AddDropdown("Theme", {
-    Title = "Themes",
-    Values = THEMES,
-    Multi = false,
-    Default = "Darker",
-    Callback = function(v)
-        Fluent:SetTheme(v)
-    end,
-})
-Tabs.Settings:AddKeybind("MenuKey", {
-    Title = "Phím ẩn/hiện menu",
-    Mode = "Toggle",
-    Default = "RightControl",
-    Callback = function()
-        pcall(function()
-            Window:Minimize()
-        end)
-    end,
-})
 
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
