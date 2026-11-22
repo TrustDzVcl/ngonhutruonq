@@ -1,13 +1,16 @@
+local env = (getgenv and getgenv()) or _G
+if env.TrustPremiumCleanup then pcall(env.TrustPremiumCleanup) end
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
-    HeightOffset = 8,
-    MaxRange = 500,
-    SkillRange = 25,
+    HeightOffset = 7.5,
+    MaxRange = 400,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -15,9 +18,9 @@ local CONFIG = {
         Enum.KeyCode.Four,
         Enum.KeyCode.Five,
     },
-    SkillInterval = 0.3,
+    SkillInterval = 0.25,
     KeyHold = 0.05,
-    TargetRefresh = 0.3,
+    TargetRefresh = 0.1,
 }
 
 local State = {
@@ -34,16 +37,104 @@ local function track(conn)
     return conn
 end
 
+local MouseUtil
+pcall(function()
+    local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
+    MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
+end)
+
+local originalGetTarget
+if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
+    originalGetTarget = MouseUtil.GetTarget
+    MouseUtil.GetTarget = function(...)
+        if State.AutoFarm and currentTarget and currentTarget.Parent then
+            return currentTarget.Position
+        end
+        return originalGetTarget(...)
+    end
+end
+
+local function getClosestEnemy()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then
+        return nil
+    end
+
+    local best, bestDist = nil, CONFIG.MaxRange
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+            if hum and hum.Health > 0 and eRoot then
+                local d = (root.Position - eRoot.Position).Magnitude
+                if d < bestDist then
+                    best, bestDist = eRoot, d
+                end
+            end
+        end
+    end
+    return best
+end
+
+task.spawn(function()
+    while alive do
+        if State.AutoFarm then
+            currentTarget = getClosestEnemy()
+        else
+            currentTarget = nil
+        end
+        task.wait(CONFIG.TargetRefresh)
+    end
+end)
+
+track(RunService.Heartbeat:Connect(function()
+    if not (alive and State.AutoFarm) then
+        return
+    end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local target = currentTarget
+    if root and target and target.Parent then
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.CFrame = CFrame.new(
+            target.Position + Vector3.new(0, CONFIG.HeightOffset, 0),
+            target.Position
+        )
+end
+end))
+
+task.spawn(function()
+    while alive do
+        if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
+            for _, key in ipairs(CONFIG.SkillKeys) do
+                if not (alive and State.AutoFarm and State.AutoSkill) then
+                    break
+                end
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
+                task.wait(CONFIG.KeyHold)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+                task.wait(0.05)
+            end
+        end
+        task.wait(CONFIG.SkillInterval)
+    end
+end)
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "TrustPremium"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 local guiOk = false
 if gethui then
-    guiOk = pcall(function() gui.Parent = gethui() end)
+    guiOk = pcall(function()
+        gui.Parent = gethui()
+    end)
 end
 if not guiOk or not gui.Parent then
-    local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
+    local ok = pcall(function()
+        gui.Parent = CoreGui
+    end)
     if not ok or not gui.Parent then
         gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
     end
@@ -78,177 +169,29 @@ end
 
 makeToggle("AutoFarm", 10, false, function(v)
     State.AutoFarm = v
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.PlatformStand = v end
-    end
 end)
-
 makeToggle("AutoSkill", 54, true, function(v)
     State.AutoSkill = v
 end)
 
-pcall(function()
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if hum then hum.PlatformStand = false end
-        if root then
-            root.Anchored = false
-            root.CanCollide = true
-        end
-    end
-end)
-
-local MouseUtil
-pcall(function()
-    local utils = ReplicatedStorage:WaitForChild("Utilities", 10)
-    MouseUtil = require(utils:WaitForChild("MouseUtil", 10))
-end)
-
-local originalGetTarget
-if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
-    originalGetTarget = MouseUtil.GetTarget
-    MouseUtil.GetTarget = function(...)
-        if State.AutoFarm and currentTarget and currentTarget.Parent then
-            return currentTarget.Position
-        end
-        return originalGetTarget(...)
-    end
+if not originalGetTarget then
+    warn("[TrustPremium] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
 end
 
-local function getClosestEnemy()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    local best, bestDist = nil, CONFIG.MaxRange
-    
-    for _, obj in ipairs(workspace:GetChildren()) do
-        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
-            local hum = obj:FindFirstChildOfClass("Humanoid")
-            local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            
-            local isSummon = false
-            local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator")
-            if owner and owner:IsA("ObjectValue") and owner.Value then
-                if owner.Value == LocalPlayer or owner.Value == char then
-                    isSummon = true
-                end
-            end
-            
-            local nameLower = string.lower(obj.Name)
-            if nameLower:find("pet") or nameLower:find("summon") or nameLower:find("clone") or nameLower:find("minion") then
-                isSummon = true
-            end
-            
-            if hum and hum.Health > 0 and eRoot and not isSummon then
-                local d = (root.Position - eRoot.Position).Magnitude
-                if d < bestDist then
-                    best, bestDist = eRoot, d
-                end
-            end
-        end
-    end
-    return best
-end
-
-task.spawn(function()
-    while alive do
-        if State.AutoFarm then
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            
-            local keepTarget = false
-            if currentTarget and currentTarget.Parent and root then
-                local hum = currentTarget.Parent:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then
-                    local dist = (root.Position - currentTarget.Position).Magnitude
-                    if dist <= CONFIG.MaxRange then
-                        keepTarget = true
-                    end
-                end
-            end
-            
-            if not keepTarget then
-                currentTarget = getClosestEnemy()
-            end
-        else
-            currentTarget = nil
-        end
-        task.wait(CONFIG.TargetRefresh)
-    end
-end)
-
-track(RunService.RenderStepped:Connect(function()
-    if not (alive and State.AutoFarm) then return end
-    
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local target = currentTarget
-    
-    if root and target and target.Parent then
-        pcall(function()
-            local destX = target.Position.X
-            local destZ = target.Position.Z
-            local destY = root.Position.Y
-            
-            local destPos = Vector3.new(destX, destY, destZ)
-            local lookAt = Vector3.new(destX, destY - 1, destZ)
-            
-            local targetCFrame = CFrame.new(destPos, lookAt)
-            root.CFrame = root.CFrame:Lerp(targetCFrame, 0.2)
-            root.AssemblyLinearVelocity = Vector3.zero
-        end)
-    end
-end))
-
-task.spawn(function()
-    while alive do
-        if State.AutoFarm and State.AutoSkill and currentTarget and currentTarget.Parent then
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            
-            if root then
-                local distance = (root.Position - currentTarget.Position).Magnitude
-                if distance <= CONFIG.SkillRange then
-                    for _, key in ipairs(CONFIG.SkillKeys) do
-                        if not (alive and State.AutoFarm and State.AutoSkill) then break end
-                        VirtualInputManager:SendKeyEvent(true, key, false, game)
-                        task.wait(CONFIG.KeyHold)
-                        VirtualInputManager:SendKeyEvent(false, key, false, game)
-                        task.wait(0.05)
-                    end
-                end
-            end
-        end
-        task.wait(CONFIG.SkillInterval)
-    end
-end)
-
-_G.TrustPremiumCleanup = function()
+env.TrustPremiumCleanup = function()
     alive = false
     State.AutoFarm = false
     if originalGetTarget and type(MouseUtil) == "table" then
         MouseUtil.GetTarget = originalGetTarget
     end
-    
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if hum then hum.PlatformStand = false end
-        if root then 
-            root.Anchored = false
-            root.CanCollide = true 
-        end
-    end
-
     for _, conn in ipairs(Connections) do
-        pcall(function() conn:Disconnect() end)
+        pcall(function()
+            conn:Disconnect()
+        end)
     end
     table.clear(Connections)
-    if gui then gui:Destroy() end
+    if gui then
+        gui:Destroy()
+    end
+    env.TrustPremiumCleanup = nil
 end
