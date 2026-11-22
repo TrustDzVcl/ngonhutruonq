@@ -623,7 +623,6 @@ Window = Fluent:CreateWindow({
     Size = isSmall and UDim2.fromOffset(480, 340) or UDim2.fromOffset(580, 420),
     Acrylic = false,
     Theme = "Darker",
-    MinimizeKey = Enum.KeyCode.RightControl,
 })
 
 --// TAB ORDER: Main, Quest, Shop, Teleport, Player, ESP, Misc, Server, Webhook, Settings
