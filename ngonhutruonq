@@ -9,8 +9,8 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local CONFIG = {
-    HeightOffset = 5, -- Hạ xuống 5 cho an toàn, tránh anti-cheat
-    MaxRange = 1000, -- Tăng tầm quét lên 1000 để tự động lao tới từ xa
+    HeightOffset = 7,
+    MaxRange = 1000,
     SkillKeys = {
         Enum.KeyCode.One,
         Enum.KeyCode.Two,
@@ -20,7 +20,7 @@ local CONFIG = {
     },
     SkillInterval = 0.25,
     KeyHold = 0.05,
-    TargetRefresh = 0.1,
+    TargetRefresh = 0.3,
 }
 
 local State = {
@@ -109,26 +109,18 @@ task.spawn(function()
     end
 end)
 
--- VÒNG LẶP BAY THEO QUÁI (ĐÃ FIX ANTI-CHEAT GIẬT VỀ CHỖ CŨ)
-task.spawn(function()
-    while alive do
-        if State.AutoFarm and currentTarget and currentTarget.Parent then
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                local targetPos = currentTarget.Position + Vector3.new(0, CONFIG.HeightOffset, 0)
-                local distance = (root.Position - targetPos).Magnitude
-                
-                -- Chỉ teleport khi khoảng cách > 8 studs (tránh rung lắc, giật lag)
-                if distance > 8 then
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.CFrame = CFrame.new(targetPos, currentTarget.Position)
-                end
-            end
-        end
-        task.wait(0.1) -- Giảm tần suất teleport xuống 10 lần/giây (thay vì 60 lần/giây)
+track(RunService.Stepped:Connect(function()
+    if not (alive and State.AutoFarm) then
+        return
     end
-end)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local target = currentTarget
+    if root and target and target.Parent then
+        local targetPos = target.Position + Vector3.new(0, CONFIG.HeightOffset, 0)
+        root.CFrame = CFrame.new(targetPos, target.Position)
+    end
+end))
 
 task.spawn(function()
     while alive do
@@ -200,15 +192,13 @@ makeToggle("AutoFarm", 10, false, function(v)
         local hum = char:FindFirstChildOfClass("Humanoid")
         local root = char:FindFirstChild("HumanoidRootPart")
         if hum then
-            hum.PlatformStand = v -- Bật/Tắt chống trọng lực
+            hum.PlatformStand = v
         end
         if root then
-            root.CanCollide = not v -- Bật/Tắt xuyên vật thể
-            if not v then
-                -- Reset vận tốc khi tắt để không bị rơi tự do
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-            end
+            root.Anchored = v
+            root.CanCollide = not v
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
         end
     end
 end)
@@ -218,7 +208,7 @@ makeToggle("AutoSkill", 54, true, function(v)
 end)
 
 if not originalGetTarget then
-    warn("[TrustPremium] Không hook được MouseUtil.GetTarget, skill có thể vẫn lệch vị trí.")
+    warn("[TrustPremium] Khong hook duoc MouseUtil.GetTarget, skill co the van lech vi tri.")
 end
 
 env.TrustPremiumCleanup = function()
@@ -228,13 +218,15 @@ env.TrustPremiumCleanup = function()
         MouseUtil.GetTarget = originalGetTarget
     end
     
-    -- Trả lại trạng thái bình thường cho nhân vật khi tắt script
     local char = LocalPlayer.Character
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         local root = char:FindFirstChild("HumanoidRootPart")
         if hum then hum.PlatformStand = false end
-        if root then root.CanCollide = true end
+        if root then 
+            root.Anchored = false
+            root.CanCollide = true 
+        end
     end
 
     for _, conn in ipairs(Connections) do
