@@ -62,11 +62,32 @@ local function getClosestEnemy()
     end
 
     local best, bestDist = nil, CONFIG.MaxRange
+    
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local eRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-            if hum and hum.Health > 0 and eRoot then
+            
+            local isSummon = false
+            
+            local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator") or obj:FindFirstChild("Master") or obj:FindFirstChild("Player")
+            if owner and owner:IsA("ObjectValue") and owner.Value then
+                if owner.Value:IsA("Player") or owner.Value:IsA("Model") then
+                    isSummon = true
+                end
+            end
+            
+            local ownerAttr = obj:GetAttribute("Owner") or obj:GetAttribute("OwnerUserId") or obj:GetAttribute("Creator")
+            if ownerAttr then
+                isSummon = true
+            end
+            
+            local nameLower = string.lower(obj.Name)
+            if nameLower:find("pet") or nameLower:find("summon") or nameLower:find("clone") or nameLower:find("minion") then
+                isSummon = true
+            end
+            
+            if hum and hum.Health > 0 and eRoot and not isSummon then
                 local d = (root.Position - eRoot.Position).Magnitude
                 if d < bestDist then
                     best, bestDist = eRoot, d
@@ -169,7 +190,16 @@ end
 
 makeToggle("AutoFarm", 10, false, function(v)
     State.AutoFarm = v
+    if not v then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
 end)
+
 makeToggle("AutoSkill", 54, true, function(v)
     State.AutoSkill = v
 end)
