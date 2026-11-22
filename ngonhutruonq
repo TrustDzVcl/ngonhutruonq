@@ -646,7 +646,7 @@ Tabs.Main:AddParagraph({
     Content = "Khóa vị trí trên quái gần nhất trong phạm vi phát hiện. Đặt khoảng cách và kiểu farm bên dưới.",
 })
 Tabs.Main:AddToggle("AutoFarm", {
-    Title = "Bật Auto Farm",
+    Title = "Auto Farm",
     Default = false,
     Callback = function(v)
         State.AutoFarm = v
@@ -656,7 +656,7 @@ Tabs.Main:AddToggle("AutoFarm", {
     end,
 })
 Tabs.Main:AddDropdown("FarmMode", {
-    Title = "Kiểu farm",
+    Title = "FramMode",
     Values = FARM_MODES,
     Multi = false,
     Default = MODE_TOP,
@@ -665,7 +665,7 @@ Tabs.Main:AddDropdown("FarmMode", {
     end,
 })
 Tabs.Main:AddSlider("FarmDistance", {
-    Title = "Khoảng cách farm",
+    Title = "FarmDistance",
     Default = 7,
     Min = 1,
     Max = 20,
@@ -675,7 +675,7 @@ Tabs.Main:AddSlider("FarmDistance", {
     end,
 })
 Tabs.Main:AddSlider("DetectRange", {
-    Title = "Phạm vi phát hiện quái",
+    Title = "DetectRange",
     Default = 300,
     Min = 50,
     Max = 1000,
@@ -685,14 +685,14 @@ Tabs.Main:AddSlider("DetectRange", {
     end,
 })
 Tabs.Main:AddToggle("AutoSkill", {
-    Title = "Auto Skill (1-5)",
+    Title = "Auto Skill",
     Default = true,
     Callback = function(v)
         State.AutoSkill = v
     end,
 })
 Tabs.Main:AddSlider("SkillDelay", {
-    Title = "Delay giữa các skill",
+    Title = "Skill Delay",
     Default = 0.3,
     Min = 0.1,
     Max = 2,
@@ -702,7 +702,7 @@ Tabs.Main:AddSlider("SkillDelay", {
     end,
 })
 Tabs.Main:AddToggle("AutoMelee", {
-    Title = "Đánh thường tự động",
+    Title = "Auto Melee",
     Default = true,
     Callback = function(v)
         State.AutoMelee = v
@@ -717,7 +717,7 @@ Tabs.Quest:AddToggle("AutoQuest", {
     end,
 })
 Tabs.Quest:AddSlider("QuestRange", {
-    Title = "Phạm vi quest",
+    Title = "Quest Range",
     Default = 25,
     Min = 5,
     Max = 100,
@@ -739,7 +739,7 @@ Tabs.Quest:AddButton({
     end,
 })
 Tabs.Quest:AddButton({
-    Title = "Nhận quest ngay",
+    Title = "Auto Quest",
     Callback = function()
         local prompt = findPrompt(QUEST_WORDS, State.QuestRange)
         if prompt then
@@ -751,7 +751,7 @@ Tabs.Quest:AddButton({
 })
 
 Tabs.Player:AddToggle("WalkEnabled", {
-    Title = "Bật tốc độ",
+    Title = "WalkEnabled",
     Default = false,
     Callback = function(v)
         State.WalkEnabled = v
@@ -764,7 +764,7 @@ Tabs.Player:AddToggle("WalkEnabled", {
     end,
 })
 Tabs.Player:AddSlider("WalkSpeed", {
-    Title = "Tốc độ đi",
+    Title = "WalkSpeed",
     Default = 16,
     Min = 16,
     Max = 250,
@@ -774,14 +774,14 @@ Tabs.Player:AddSlider("WalkSpeed", {
     end,
 })
 Tabs.Player:AddToggle("JumpEnabled", {
-    Title = "Bật lực nhảy",
+    Title = "JumpEnabled",
     Default = false,
     Callback = function(v)
         State.JumpEnabled = v
     end,
 })
 Tabs.Player:AddSlider("JumpPower", {
-    Title = "Lực nhảy",
+    Title = "JupPower",
     Default = 50,
     Min = 50,
     Max = 300,
@@ -791,13 +791,13 @@ Tabs.Player:AddSlider("JumpPower", {
     end,
 })
 Tabs.Player:AddToggle("InfJump", {
-    Title = "Nhảy vô hạn",
+    Title = "InfJump",
     Default = false,
     Callback = function(v)
         State.InfJump = v
     end,
 })
-Tabs.Player:AddToggle("Noclip", {
+Tabs.Player:AddToggle("NoClip", {
     Title = "Noclip",
     Default = false,
     Callback = function(v)
@@ -816,7 +816,7 @@ Tabs.Player:AddToggle("Noclip", {
 })
 
 Tabs.ESP:AddToggle("ESPPlayers", {
-    Title = "ESP người chơi",
+    Title = "ESP Players",
     Default = false,
     Callback = function(v)
         State.ESPPlayers = v
@@ -826,7 +826,7 @@ Tabs.ESP:AddToggle("ESPPlayers", {
     end,
 })
 Tabs.ESP:AddToggle("ESPEnemies", {
-    Title = "ESP quái",
+    Title = "ESP Enemies",
     Default = false,
     Callback = function(v)
         State.ESPEnemies = v
@@ -836,15 +836,15 @@ Tabs.ESP:AddToggle("ESPEnemies", {
     end,
 })
 Tabs.ESP:AddToggle("HideTeammates", {
-    Title = "Ẩn đồng đội",
+    Title = "HideTeammates",
     Default = true,
     Callback = function(v)
         State.HideTeammates = v
     end,
 })
 Tabs.ESP:AddSlider("ESPRange", {
-    Title = "Phạm vi ESP quái",
-    Default = 500,
+    Title = "ESP Range",
+    Default = 600,
     Min = 100,
     Max = 2000,
     Rounding = 0,
@@ -874,7 +874,7 @@ Tabs.Misc:AddButton({
     end,
 })
 Tabs.Misc:AddButton({
-    Title = "Đặt lại nhân vật",
+    Title = "Reset",
     Callback = function()
         local hum = getHum()
         if hum then
@@ -908,7 +908,7 @@ Tabs.Shop:AddButton({
 })
 
 Tabs.Server:AddButton({
-    Title = "Server hop",
+    Title = "Server Hop",
     Callback = serverHop,
 })
 Tabs.Server:AddInput("JobIdInput", {
@@ -1024,7 +1024,7 @@ Tabs.Webhook:AddSlider("WebhookInterval", {
     end,
 })
 Tabs.Webhook:AddButton({
-    Title = "Gửi thử",
+    Title = "Text Webhook",
     Callback = function()
         if sendWebhook(buildStatus()) then
             notify("Webhook", "Đã gửi")
