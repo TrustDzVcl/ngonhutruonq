@@ -1,5 +1,5 @@
 local env = (getgenv and getgenv()) or _G
-if env.DarkwenFluentCleanup then pcall(env.DarkwenFluentCleanup) end
+if env.TrustPremium then pcall(env.TrustPremium) end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -103,7 +103,6 @@ local function tpTo(pos)
     end
 end
 
---// Load game modules
 pcall(function()
     MouseUtil = require(ReplicatedStorage:WaitForChild("Utilities", 10):WaitForChild("MouseUtil", 10))
 end)
@@ -121,7 +120,6 @@ if type(MouseUtil) == "table" and type(MouseUtil.GetTarget) == "function" then
     end
 end
 
---// Enemy scan
 local function isSummon(obj)
     local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("Creator") or obj:FindFirstChild("Master")
     if owner and owner:IsA("ObjectValue") and owner.Value then
@@ -164,7 +162,6 @@ local function scanEnemies(maxRange)
     return list
 end
 
---// Target loop
 task.spawn(function()
     while alive do
         if State.AutoFarm then
@@ -177,7 +174,6 @@ task.spawn(function()
     end
 end)
 
---// Farm positioning
 local function farmCFrame(tRoot)
     local p = tRoot.Position
     local d = State.FarmDistance
@@ -252,7 +248,6 @@ track(RunService.Heartbeat:Connect(function()
     root.AssemblyAngularVelocity = Vector3.zero
 end))
 
---// Auto melee
 task.spawn(function()
     while alive do
         local entry = currentEntry
@@ -270,7 +265,6 @@ task.spawn(function()
     end
 end)
 
---// Auto skill (bấm phím 1-5)
 local SkillKeys = {
     Enum.KeyCode.One,
     Enum.KeyCode.Two,
@@ -300,7 +294,6 @@ task.spawn(function()
     end
 end)
 
---// ProximityPrompt helpers
 local function promptMatches(prompt, words)
     local text = string.lower((prompt.ActionText or "") .. " " .. (prompt.ObjectText or "") .. " " .. (prompt.Parent and prompt.Parent.Name or ""))
     for _, w in ipairs(words) do
@@ -353,7 +346,6 @@ local function firePrompt(prompt)
     end
 end
 
---// Auto quest
 task.spawn(function()
     while alive do
         if State.AutoQuest then
@@ -366,7 +358,6 @@ task.spawn(function()
     end
 end)
 
---// Player movement
 task.spawn(function()
     while alive do
         local hum = getHum()
@@ -406,7 +397,6 @@ track(RunService.Stepped:Connect(function()
     end
 end))
 
---// ESP
 local function clearESP(model)
     local e = espObjects[model]
     if e then
@@ -496,7 +486,6 @@ task.spawn(function()
     end
 end)
 
---// Anti AFK
 track(LocalPlayer.Idled:Connect(function()
     if State.AntiAFK then
         VirtualUser:CaptureController()
@@ -504,7 +493,6 @@ track(LocalPlayer.Idled:Connect(function()
     end
 end))
 
---// Server utils
 local function serverHop()
     if not request then
         notify("Server", "Executor không hỗ trợ request")
@@ -540,15 +528,14 @@ local function rejoin()
     TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
 end
 
---// Webhook
 local function sendWebhook(content)
     if not request or State.WebhookURL == "" then
         return false
     end
     local payload = {
-        username = "Darkwen",
+        username = "TrustPremium",
         embeds = {{
-            title = "Darkwen | Anime CardVerse",
+            title = "TrustPremium | Anime CardVerse",
             description = content,
             color = 9127167,
             timestamp = DateTime.now():ToIsoDate(),
@@ -588,7 +575,6 @@ task.spawn(function()
     end
 end)
 
---// Map helpers
 local function getMapFolder()
     for _, name in ipairs(MAP_FOLDER_NAMES) do
         local folder = Workspace:FindFirstChild(name)
@@ -627,12 +613,11 @@ local function listPlayers()
     return list
 end
 
---// Window
 local camera = Workspace.CurrentCamera or Workspace:WaitForChild("CurrentCamera")
 local isSmall = camera.ViewportSize.X < 800
 
 Window = Fluent:CreateWindow({
-    Title = "Darkwen",
+    Title = "TrustPremium",
     SubTitle = "Anime CardVerse",
     TabWidth = isSmall and 110 or 140,
     Size = isSmall and UDim2.fromOffset(480, 340) or UDim2.fromOffset(580, 420),
@@ -656,7 +641,6 @@ local Tabs = {
 
 local Options = Fluent.Options
 
---// Main
 Tabs.Main:AddParagraph({
     Title = "Auto Farm",
     Content = "Khóa vị trí trên quái gần nhất trong phạm vi phát hiện. Đặt khoảng cách và kiểu farm bên dưới.",
@@ -725,7 +709,6 @@ Tabs.Main:AddToggle("AutoMelee", {
     end,
 })
 
---// Quest
 Tabs.Quest:AddToggle("AutoQuest", {
     Title = "Auto nhận quest gần",
     Default = false,
@@ -767,7 +750,6 @@ Tabs.Quest:AddButton({
     end,
 })
 
---// Player
 Tabs.Player:AddToggle("WalkEnabled", {
     Title = "Bật tốc độ",
     Default = false,
@@ -833,7 +815,6 @@ Tabs.Player:AddToggle("Noclip", {
     end,
 })
 
---// ESP
 Tabs.ESP:AddToggle("ESPPlayers", {
     Title = "ESP người chơi",
     Default = false,
@@ -872,7 +853,6 @@ Tabs.ESP:AddSlider("ESPRange", {
     end,
 })
 
---// Misc
 Tabs.Misc:AddToggle("AntiAFK", {
     Title = "Anti AFK",
     Default = true,
@@ -903,7 +883,6 @@ Tabs.Misc:AddButton({
     end,
 })
 
---// Shop
 Tabs.Shop:AddButton({
     Title = "Tới shop gần nhất",
     Callback = function()
@@ -928,7 +907,6 @@ Tabs.Shop:AddButton({
     end,
 })
 
---// Server
 Tabs.Server:AddButton({
     Title = "Server hop",
     Callback = serverHop,
@@ -950,7 +928,6 @@ Tabs.Server:AddButton({
     Callback = rejoin,
 })
 
---// Teleport
 Tabs.Teleport:AddDropdown("TeleportMap", {
     Title = "Chọn map",
     Values = listMaps(),
@@ -1019,7 +996,6 @@ track(Players.PlayerRemoving:Connect(function()
     end)
 end))
 
---// Webhook
 Tabs.Webhook:AddInput("WebhookURL", {
     Title = "Webhook URL",
     Default = "",
@@ -1058,7 +1034,6 @@ Tabs.Webhook:AddButton({
     end,
 })
 
---// Settings
 Tabs.Settings:AddDropdown("Theme", {
     Title = "Giao diện",
     Values = THEMES,
@@ -1082,8 +1057,8 @@ Tabs.Settings:AddKeybind("MenuKey", {
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
 SaveManager:SetIgnoreIndexes({"JobIdInput", "WebhookURL", "TeleportMap", "TeleportPlayer"})
-InterfaceManager:SetFolder("DarkwenCV")
-SaveManager:SetFolder("DarkwenCV/configs")
+InterfaceManager:SetFolder("TrustPremiumCV")
+SaveManager:SetFolder("TrustPremiumCV/configs")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 pcall(function()
@@ -1092,9 +1067,8 @@ end)
 
 Window:SelectTab(1)
 
---// Nút nổi cho mobile
 local floatHolder = Instance.new("ScreenGui")
-floatHolder.Name = "DarkwenFloat"
+floatHolder.Name = "TrustPremiumFloat"
 floatHolder.ResetOnSpawn = false
 floatHolder.DisplayOrder = 1000
 local floatOk = false
@@ -1119,7 +1093,7 @@ floatBtn.BackgroundColor3 = Color3.fromRGB(140, 90, 255)
 floatBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 floatBtn.Font = Enum.Font.GothamBold
 floatBtn.TextSize = 18
-floatBtn.Text = "D"
+floatBtn.Text = "T"
 floatBtn.BorderSizePixel = 0
 floatBtn.AutoButtonColor = false
 floatBtn.Parent = floatHolder
@@ -1133,8 +1107,7 @@ track(floatBtn.MouseButton1Click:Connect(function()
     end)
 end))
 
---// Cleanup
-env.DarkwenFluentCleanup = function()
+env.TrustPremium = function()
     alive = false
     State.AutoFarm = false
     State.AutoQuest = false
@@ -1171,5 +1144,5 @@ env.DarkwenFluentCleanup = function()
             Fluent:Destroy()
         end)
     end
-    env.DarkwenFluentCleanup = nil
+    env.TrustPremium = nil
 end
