@@ -1,4 +1,4 @@
-local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/NoahTyrant/Fluent-Ui/refs/heads/main/main.lua"))()
+local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/TrustDzVcl/Fluent-Ui/refs/heads/main/main.lua"))()
 pcall(function()
 	if Fluent and Fluent.GUI then
 		Fluent.GUI.DisplayOrder = 5000
