@@ -130,7 +130,7 @@ local Config = {
 	WeatherWebhookUrl = "",
 }
 
-local SAVE_FOLDER = "StarCrowHub"
+local SAVE_FOLDER = "Trust"
 local SAVE_FILE = SAVE_FOLDER .. "/Heavyweigh Fishing.json"
 
 local function SaveConfig()
