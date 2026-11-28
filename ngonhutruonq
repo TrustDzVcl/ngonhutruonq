@@ -15,12 +15,12 @@ local State = {
     HoldDir = 1,
     LastX = nil,
     Holding = false,
-    Status = "Đang tìm thanh...",
+    Status = "",
 }
 
 local Connections = {}
 local alive = true
-local gui, btn
+local gui, statusLabel, toggleBtn
 
 local function track(conn)
     table.insert(Connections, conn)
@@ -122,10 +122,18 @@ end
 local function setStatus(text)
     if State.Status ~= text then
         State.Status = text
-        if btn then
-            btn.Text = text
+        if statusLabel then
+            statusLabel.Text = text
         end
     end
+end
+
+local function refreshToggle()
+    if not toggleBtn then
+        return
+    end
+    toggleBtn.Text = State.Enabled and "ĐANG BẬT (bấm để tắt)" or "ĐANG TẮT (bấm để bật)"
+    toggleBtn.BackgroundColor3 = State.Enabled and Color3.fromRGB(50, 200, 90) or Color3.fromRGB(200, 60, 80)
 end
 
 track(RunService.RenderStepped:Connect(function()
@@ -134,7 +142,7 @@ track(RunService.RenderStepped:Connect(function()
     end
     if not State.Enabled then
         setHold(false)
-        setStatus("Giữ vùng xanh: OFF")
+        setStatus("Trạng thái: tắt")
         return
     end
 
@@ -143,10 +151,10 @@ track(RunService.RenderStepped:Connect(function()
         if not bar then
             setHold(false)
             State.LastX = nil
-            setStatus("Giữ vùng xanh: ON (chưa thấy thanh)")
+            setStatus("Trạng thái: chưa thấy thanh")
             return
         end
-        setStatus("Giữ vùng xanh: ON (đã bắt thanh)")
+        setStatus("Trạng thái: đã bắt thanh")
 
         local t0, t1 = greenRange(grad)
         local bl = bar.AbsolutePosition.X
@@ -179,46 +187,8 @@ track(RunService.RenderStepped:Connect(function()
     end
 end))
 
---========== GUI ==========
-gui = Instance.new("ScreenGui")
-gui.Name = "DarkwenFish"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999
-local guiOk = false
-if gethui then
-    guiOk = pcall(function()
-        gui.Parent = gethui()
-    end)
-end
-if not guiOk or not gui.Parent then
-    if not pcall(function()
-        gui.Parent = CoreGui
-    end) or not gui.Parent then
-        gui.Parent = PlayerGui
-    end
-end
-
-btn = Instance.new("TextButton")
-btn.Size = UDim2.fromOffset(230, 36)
-btn.Position = UDim2.new(0.5, -115, 0, 10)
-btn.BorderSizePixel = 0
-btn.AutoButtonColor = false
-btn.Font = Enum.Font.GothamBold
-btn.TextSize = 13
-btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-btn.BackgroundColor3 = Color3.fromRGB(50, 200, 90)
-btn.Text = "Đang tìm thanh..."
-btn.Parent = gui
-
-track(btn.MouseButton1Click:Connect(function()
-    State.Enabled = not State.Enabled
-    btn.BackgroundColor3 = State.Enabled and Color3.fromRGB(50, 200, 90) or Color3.fromRGB(200, 60, 80)
-    if not State.Enabled then
-        setHold(false)
-    end
-end))
-
-env.DarkwenFishCleanup = function()
+--========== XÓA SCRIPT ==========
+local function cleanup()
     alive = false
     State.Enabled = false
     setHold(false)
@@ -235,3 +205,129 @@ env.DarkwenFishCleanup = function()
     end
     env.DarkwenFishCleanup = nil
 end
+env.DarkwenFishCleanup = cleanup
+
+--========== MENU ==========
+local function mountGui(g)
+    if syn and syn.protect_gui then
+        pcall(syn.protect_gui, g)
+    end
+    if gethui then
+        local ok = pcall(function()
+            g.Parent = gethui()
+        end)
+        if ok and g.Parent then
+            return
+        end
+    end
+    local ok2 = pcall(function()
+        g.Parent = CoreGui
+    end)
+    if ok2 and g.Parent then
+        return
+    end
+    g.Parent = PlayerGui
+end
+
+gui = Instance.new("ScreenGui")
+gui.Name = "DarkwenFish"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 999
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mountGui(gui)
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(240, 104)
+frame.Position = UDim2.new(0.5, -120, 0, 60)
+frame.BackgroundColor3 = Color3.fromRGB(25, 27, 34)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+-- Thanh tiêu đề (kéo để di chuyển)
+local title = Instance.new("TextButton")
+title.Size = UDim2.new(1, -36, 0, 28)
+title.BackgroundColor3 = Color3.fromRGB(38, 41, 52)
+title.BorderSizePixel = 0
+title.AutoButtonColor = false
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Text = "Darkwen Fish (kéo để di chuyển)"
+title.Parent = frame
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+
+-- Nút xóa script
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.fromOffset(28, 28)
+closeBtn.Position = UDim2.new(1, -32, 0, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 80)
+closeBtn.BorderSizePixel = 0
+closeBtn.AutoButtonColor = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Text = "✕"
+closeBtn.Parent = frame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+
+statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -16, 0, 22)
+statusLabel.Position = UDim2.fromOffset(8, 34)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 12
+statusLabel.TextColor3 = Color3.fromRGB(210, 214, 225)
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Text = "Trạng thái: đang tìm thanh..."
+statusLabel.Parent = frame
+
+toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, -16, 0, 32)
+toggleBtn.Position = UDim2.fromOffset(8, 62)
+toggleBtn.BorderSizePixel = 0
+toggleBtn.AutoButtonColor = false
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 13
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Parent = frame
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
+refreshToggle()
+
+track(toggleBtn.MouseButton1Click:Connect(function()
+    State.Enabled = not State.Enabled
+    if not State.Enabled then
+        setHold(false)
+    end
+    refreshToggle()
+end))
+
+track(closeBtn.MouseButton1Click:Connect(cleanup))
+
+-- Kéo menu
+local dragging, dragStart, startPos = false, nil, nil
+track(title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end))
+track(UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local d = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + d.X,
+            startPos.Y.Scale, startPos.Y.Offset + d.Y
+        )
+    end
+end))
