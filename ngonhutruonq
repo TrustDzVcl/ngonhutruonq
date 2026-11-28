@@ -245,7 +245,7 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mountGui(gui)
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(300, 104)
+frame.Size = UDim2.fromOffset(300, 142)
 frame.Position = UDim2.new(0.5, -150, 0, 60)
 frame.BackgroundColor3 = Color3.fromRGB(25, 27, 34)
 frame.BorderSizePixel = 0
@@ -312,6 +312,77 @@ track(toggleBtn.MouseButton1Click:Connect(function()
 end))
 
 track(closeBtn.MouseButton1Click:Connect(cleanup))
+
+-- Nút copy cấu trúc UI của thanh (để gửi cho người sửa script)
+local dumpBtn = Instance.new("TextButton")
+dumpBtn.Size = UDim2.new(1, -16, 0, 32)
+dumpBtn.Position = UDim2.fromOffset(8, 100)
+dumpBtn.BackgroundColor3 = Color3.fromRGB(70, 90, 160)
+dumpBtn.BorderSizePixel = 0
+dumpBtn.AutoButtonColor = true
+dumpBtn.Font = Enum.Font.GothamBold
+dumpBtn.TextSize = 13
+dumpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+dumpBtn.Text = "Copy cấu trúc thanh (gửi cho mình)"
+dumpBtn.Parent = frame
+Instance.new("UICorner", dumpBtn).CornerRadius = UDim.new(0, 6)
+
+local function dumpUI()
+    local lines = {}
+    local bar = findBar()
+    if bar then
+        local root = (bar.Parent and bar.Parent.Parent) or bar.Parent or bar
+        local function walk(o, depth)
+            if #lines > 150 or depth > 6 then
+                return
+            end
+            local s = string.rep(" ", depth) .. o.ClassName .. " " .. o.Name
+            if o:IsA("GuiObject") then
+                s = s .. string.format(" vis=%s pos=%.0f,%.0f size=%.0f,%.0f",
+                    tostring(o.Visible), o.AbsolutePosition.X, o.AbsolutePosition.Y,
+                    o.AbsoluteSize.X, o.AbsoluteSize.Y)
+                if o:IsA("Frame") then
+                    local c = o.BackgroundColor3
+                    s = s .. string.format(" bg=%d,%d,%d", c.R * 255, c.G * 255, c.B * 255)
+                end
+            end
+            if o:IsA("UIGradient") then
+                local t = {}
+                for _, kp in ipairs(o.Color.Keypoints) do
+                    t[#t + 1] = string.format("%.2f:%d,%d,%d", kp.Time,
+                        kp.Value.R * 255, kp.Value.G * 255, kp.Value.B * 255)
+                end
+                s = s .. " grad=" .. table.concat(t, ";")
+                    .. " off=" .. tostring(o.Offset.X) .. " rot=" .. tostring(o.Rotation)
+            end
+            lines[#lines + 1] = s
+            for _, c in ipairs(o:GetChildren()) do
+                walk(c, depth + 1)
+            end
+        end
+        walk(root, 0)
+    else
+        lines[1] = "Chua thay thanh. ScreenGui trong PlayerGui:"
+        for _, g in ipairs(PlayerGui:GetChildren()) do
+            lines[#lines + 1] = g.ClassName .. " " .. g.Name
+                .. (g:IsA("ScreenGui") and (" enabled=" .. tostring(g.Enabled)) or "")
+        end
+    end
+    local text = table.concat(lines, "\n")
+    if setclipboard then
+        pcall(setclipboard, text)
+        dumpBtn.Text = "Đã copy! Dán vào chat"
+    else
+        print(text)
+        dumpBtn.Text = "Executor không có clipboard (xem F9)"
+    end
+    task.delay(3, function()
+        if dumpBtn and dumpBtn.Parent then
+            dumpBtn.Text = "Copy cấu trúc thanh (gửi cho mình)"
+        end
+    end)
+end
+track(dumpBtn.MouseButton1Click:Connect(dumpUI))
 
 -- Kéo menu
 local dragging, dragStart, startPos = false, nil, nil
