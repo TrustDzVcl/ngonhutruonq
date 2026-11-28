@@ -113,10 +113,17 @@ local function setHold(on)
         return
     end
     State.Holding = on
-    local m = UIS:GetMouseLocation()
     pcall(function()
+        local m = UIS:GetMouseLocation()
         VIM:SendMouseButtonEvent(m.X, m.Y, 0, on, game, 0)
     end)
+    -- Điện thoại: giả lập thêm một ngón chạm giữ ở giữa-trái màn hình
+    if UIS.TouchEnabled then
+        pcall(function()
+            local vs = workspace.CurrentCamera.ViewportSize
+            VIM:SendTouchEvent(1, on and 0 or 2, vs.X * 0.3, vs.Y * 0.5)
+        end)
+    end
 end
 
 local function setStatus(text)
@@ -154,8 +161,6 @@ track(RunService.RenderStepped:Connect(function()
             setStatus("Trạng thái: chưa thấy thanh")
             return
         end
-        setStatus("Trạng thái: đã bắt thanh")
-
         local t0, t1 = greenRange(grad)
         local bl = bar.AbsolutePosition.X
         local bw = bar.AbsoluteSize.X
@@ -180,6 +185,8 @@ track(RunService.RenderStepped:Connect(function()
             local needDir = diff > 0 and 1 or -1
             setHold(needDir == State.HoldDir)
         end
+        setStatus(string.format("Thanh: kim %.0f | xanh %.0f-%.0f | %s",
+            mx, zl, zl + zw, State.Holding and "GIỮ" or "nhả"))
     end)
     if not ok then
         setHold(false)
@@ -238,8 +245,8 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 mountGui(gui)
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(240, 104)
-frame.Position = UDim2.new(0.5, -120, 0, 60)
+frame.Size = UDim2.fromOffset(300, 104)
+frame.Position = UDim2.new(0.5, -150, 0, 60)
 frame.BackgroundColor3 = Color3.fromRGB(25, 27, 34)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -269,7 +276,7 @@ closeBtn.AutoButtonColor = true
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.TextSize = 14
 closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.Text = "✕"
+closeBtn.Text = "X"
 closeBtn.Parent = frame
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
 
@@ -278,7 +285,7 @@ statusLabel.Size = UDim2.new(1, -16, 0, 22)
 statusLabel.Position = UDim2.fromOffset(8, 34)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 12
+statusLabel.TextSize = 11
 statusLabel.TextColor3 = Color3.fromRGB(210, 214, 225)
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Text = "Trạng thái: đang tìm thanh..."
