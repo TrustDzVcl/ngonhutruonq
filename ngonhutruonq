@@ -13,14 +13,14 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local State = {
     Enabled = true,
     HoldDir = 1,
-    LastHolding = false,
     LastX = nil,
     Holding = false,
+    Status = "Đang tìm thanh...",
 }
 
 local Connections = {}
 local alive = true
-local gui
+local gui, btn
 
 local function track(conn)
     table.insert(Connections, conn)
@@ -28,10 +28,10 @@ local function track(conn)
 end
 
 local function isGreen(c)
-    return c.G > 0.5 and (c.G - c.R) > 0.2 and (c.G - c.B) > 0.2
+    return c.G > 0.45 and (c.G - c.R) > 0.15 and (c.G - c.B) > 0.15
 end
 
-local function isDescendantOf(obj, ancestor)
+local function isInside(obj, ancestor)
     local p = obj
     while p do
         if p == ancestor then
@@ -42,30 +42,31 @@ local function isDescendantOf(obj, ancestor)
     return false
 end
 
---// Tìm thanh minigame: frame nằm ngang có vùng xanh và con trỏ
 local barCache, zoneCache, markerCache = nil, nil, nil
 
+local function validCache()
+    return barCache and barCache.Parent and barCache.Visible
+        and zoneCache and zoneCache.Parent and zoneCache.Visible
+        and markerCache and markerCache.Parent and markerCache.Visible
+end
+
 local function findBar()
-    if barCache and barCache.Parent and barCache.Visible then
-        local zone = zoneCache
-        local marker = markerCache
-        if zone and zone.Parent and marker and marker.Parent and zone.Visible and marker.Visible then
-            return barCache, zone, marker
-        end
+    if validCache() then
+        return barCache, zoneCache, markerCache
     end
     barCache, zoneCache, markerCache = nil, nil, nil
 
     for _, bar in ipairs(PlayerGui:GetDescendants()) do
-        if bar:IsA("Frame") and bar.Visible
-            and bar.AbsoluteSize.X > 150
-            and bar.AbsoluteSize.Y > 6 and bar.AbsoluteSize.Y < 60 then
+        if bar:IsA("GuiObject") and bar.Visible
+            and bar.AbsoluteSize.X > 120
+            and bar.AbsoluteSize.Y >= 6 and bar.AbsoluteSize.Y <= 80 then
             local bw = bar.AbsoluteSize.X
             local zone
             for _, c in ipairs(bar:GetDescendants()) do
                 if c:IsA("Frame") and c.Visible and c.BackgroundTransparency < 0.5
                     and isGreen(c.BackgroundColor3)
-                    and c.AbsoluteSize.X > bw * 0.08
-                    and c.AbsoluteSize.X < bw * 0.9 then
+                    and c.AbsoluteSize.X > bw * 0.05
+                    and c.AbsoluteSize.X < bw * 0.95 then
                     zone = c
                     break
                 end
@@ -73,13 +74,11 @@ local function findBar()
             if zone then
                 local marker
                 for _, c in ipairs(bar:GetDescendants()) do
-                    if c:IsGA and false then
-                    end
-                    if c:IsA("GuiObject") and c.Visible and c ~= zone
-                        and not isDescendantOf(c, zone)
-                        and not isDescendantOf(zone, c)
+                    if c:IsA("GuiObject") and c.Visible
+                        and not isInside(c, zone)
+                        and not isInside(zone, c)
                         and c.AbsoluteSize.X >= 2
-                        and c.AbsoluteSize.X <= bw * 0.08
+                        and c.AbsoluteSize.X <= bw * 0.1
                         and c.AbsoluteSize.Y >= bar.AbsoluteSize.Y * 0.5 then
                         marker = c
                         break
@@ -95,16 +94,24 @@ local function findBar()
     return nil
 end
 
---// Điều khiển giữ chuột
 local function setHold(on)
     if State.Holding == on then
         return
     end
     State.Holding = on
-    local mouse = UIS:GetMouseLocation()
+    local m = UIS:GetMouseLocation()
     pcall(function()
-        VIM:SendMouseButtonEvent(mouse.X, mouse.Y, 0, on, game, 0)
+        VIM:SendMouseButtonEvent(m.X, m.Y, 0, on, game, 0)
     end)
+end
+
+local function setStatus(text)
+    if State.Status ~= text then
+        State.Status = text
+        if btn then
+            btn.Text = text
+        end
+    end
 end
 
 track(RunService.RenderStepped:Connect(function()
@@ -113,42 +120,48 @@ track(RunService.RenderStepped:Connect(function()
     end
     if not State.Enabled then
         setHold(false)
+        setStatus("Giữ vùng xanh: OFF")
         return
     end
 
-    local bar, zone, marker = findBar()
-    if not bar then
-        setHold(false)
-        State.LastX = nil
-        return
-    end
-
-    local zl = zone.AbsolutePosition.X
-    local zr = zl + zone.AbsoluteSize.X
-    local center = (zl + zr) / 2
-    local mx = marker.AbsolutePosition.X + marker.AbsoluteSize.X / 2
-
-    --// Tự học hướng con trỏ khi đang giữ chuột
-    if State.LastX and State.Holding then
-        local dx = mx - State.LastX
-        if math.abs(dx) > 0.3 then
-            State.HoldDir = dx > 0 and 1 or -1
+    local ok, err = pcall(function()
+        local bar, zone, marker = findBar()
+        if not bar then
+            setHold(false)
+            State.LastX = nil
+            setStatus("Giữ vùng xanh: ON (chưa thấy thanh)")
+            return
         end
-    end
-    State.LastX = mx
+        setStatus("Giữ vùng xanh: ON (đã bắt thanh)")
 
-    --// Giữ khi con trỏ đang lệch về phía cần đẩy, nhả khi đã vượt qua tâm
-    local deadband = zone.AbsoluteSize.X * 0.05
-    local error = (center - mx)
-    if math.abs(error) <= deadband then
+        local zl = zone.AbsolutePosition.X
+        local zw = zone.AbsoluteSize.X
+        local center = zl + zw / 2
+        local mx = marker.AbsolutePosition.X + marker.AbsoluteSize.X / 2
+
+        if State.LastX and State.Holding then
+            local dx = mx - State.LastX
+            if math.abs(dx) > 0.3 then
+                State.HoldDir = dx > 0 and 1 or -1
+            end
+        end
+        State.LastX = mx
+
+        local diff = center - mx
+        local deadband = zw * 0.08
+        if math.abs(diff) <= deadband then
+            setHold(false)
+        else
+            local needDir = diff > 0 and 1 or -1
+            setHold(needDir == State.HoldDir)
+        end
+    end)
+    if not ok then
         setHold(false)
-    else
-        local needDir = error > 0 and 1 or -1
-        setHold(needDir == State.HoldDir)
+        setStatus("Lỗi: " .. tostring(err):sub(1, 40))
     end
 end))
 
---// Nút bật/tắt nhỏ, kéo thả được bằng cảm ứng và chuột
 gui = Instance.new("ScreenGui")
 gui.Name = "DarkwenFish"
 gui.ResetOnSpawn = false
@@ -167,31 +180,26 @@ if not guiOk or not gui.Parent then
     end
 end
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.fromOffset(150, 36)
-btn.Position = UDim2.new(0.5, -75, 0, 10)
+btn = Instance.new("TextButton")
+btn.Size = UDim2.fromOffset(230, 36)
+btn.Position = UDim2.new(0.5, -115, 0, 10)
 btn.BorderSizePixel = 0
 btn.AutoButtonColor = false
 btn.Font = Enum.Font.GothamBold
-btn.TextSize = 14
+btn.TextSize = 13
 btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+btn.BackgroundColor3 = Color3.fromRGB(50, 200, 90)
+btn.Text = "Đang tìm thanh..."
 btn.Parent = gui
-
-local function render()
-    btn.Text = "Giữ vùng xanh: " .. (State.Enabled and "ON" or "OFF")
-    btn.BackgroundColor3 = State.Enabled and Color3.fromRGB(50, 200, 90) or Color3.fromRGB(200, 60, 80)
-end
-render()
 
 track(btn.MouseButton1Click:Connect(function()
     State.Enabled = not State.Enabled
-    render()
+    btn.BackgroundColor3 = State.Enabled and Color3.fromRGB(50, 200, 90) or Color3.fromRGB(200, 60, 80)
     if not State.Enabled then
         setHold(false)
     end
 end))
 
---// Cleanup
 env.DarkwenFishCleanup = function()
     alive = false
     State.Enabled = false
